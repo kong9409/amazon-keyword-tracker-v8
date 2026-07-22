@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import gzip
 import re
 import threading
 import time
@@ -1444,7 +1445,13 @@ class KeepaApiClient(BaseApiClient):
         self._product_cache: dict[tuple[str, str], dict[str, Any]] = {}
 
     def headers(self) -> dict[str, str]:
-        return {"Accept": "application/json", "Accept-Encoding": "gzip"}
+        return {"Accept": "application/json"}
+
+    @staticmethod
+    def _decode_body(body: bytes, encoding: str = "") -> str:
+        if encoding.lower() == "gzip" or body.startswith(b"\x1f\x8b"):
+            body = gzip.decompress(body)
+        return body.decode("utf-8", errors="replace")
 
     def _get(self, path: str, params: dict[str, Any], *, tool_name: str) -> Any:
         query = urllib.parse.urlencode({key: value for key, value in params.items() if value not in EMPTY})
@@ -1453,9 +1460,9 @@ class KeepaApiClient(BaseApiClient):
         started = time.perf_counter()
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
-                text = response.read().decode("utf-8", errors="replace")
+                text = self._decode_body(response.read(), response.headers.get("Content-Encoding", ""))
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")[:800]
+            detail = self._decode_body(exc.read(), exc.headers.get("Content-Encoding", ""))[:800]
             raise RuntimeError(f"Keepa API HTTP {exc.code}：{detail or exc.reason}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"无法连接 Keepa API：{exc.reason}") from exc
@@ -1503,6 +1510,18 @@ class KeepaApiClient(BaseApiClient):
         if isinstance(number, (int, float)) and number > 5:
             return round(number / 10, 1)
         return number
+
+    @staticmethod
+    def _product_rating(product: dict[str, Any], stats: dict[str, Any]) -> Any:
+        current = KeepaApiClient._rating(KeepaApiClient._current(stats, KeepaApiClient.CURRENT_RATING))
+        if current not in EMPTY:
+            return current
+        rating = normalize_number(product.get("rating"))
+        if rating in EMPTY or rating == -1:
+            return ""
+        if isinstance(rating, (int, float)) and rating > 50:
+            return ""
+        return KeepaApiClient._rating(rating)
 
     @staticmethod
     def _rank(product: dict[str, Any], stats: dict[str, Any]) -> tuple[Any, Any]:
@@ -1583,7 +1602,7 @@ class KeepaApiClient(BaseApiClient):
             sales=product.get("monthlySold", "") if isinstance(product, dict) else "",
             product_rank=main_rank,
             small_category_rank=small_rank,
-            rating=first_non_empty(product.get("rating") if isinstance(product, dict) else "", self._rating(self._current(stats, self.CURRENT_RATING))),
+            rating=self._product_rating(product, stats) if isinstance(product, dict) else "",
             review_count=first_non_empty(product.get("reviewCount") if isinstance(product, dict) else "", self._current(stats, self.CURRENT_REVIEWS)),
             product_url=amazon_product_url(asin, site),
         )

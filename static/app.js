@@ -242,7 +242,9 @@
       const info = payload.connection || {};
       const count = Array.isArray(info.recognized_tools) ? info.recognized_tools.length : Number(info.tool_count || 0);
       const note = info.note ? `；${info.note}` : "；数据权限将在抓取时验证";
-      setConnectionState("connected", `连接配置有效，识别接口 ${count} 个${note}，用时 ${Number(info.elapsed_seconds || 0).toFixed(2)} 秒`);
+      const productInfo = payload.product_connection;
+      const productNote = productInfo ? `；Keepa 已验证${productInfo.tokens_left !== undefined ? `，剩余 tokens：${productInfo.tokens_left}` : ""}` : "";
+      setConnectionState("connected", `连接配置有效，识别接口 ${count} 个${note}${productNote}，用时 ${Number(info.elapsed_seconds || 0).toFixed(2)} 秒`);
       toast(`${selectedProviderLabel()} 连接检查通过`);
     } catch (error) {
       setConnectionState("disconnected", error.message);

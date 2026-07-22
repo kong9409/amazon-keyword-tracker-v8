@@ -921,7 +921,8 @@ def merge_product_enrichment(record: dict[str, Any], enrichment: dict[str, Any] 
             changed = True
     record.setdefault("raw", {})
     record["raw"]["keepa"] = enrichment.get("raw", {})
-    record["source"] = f"{record.get('source', '')}+keepa_api".strip("+")
+    if changed:
+        record["source"] = f"{record.get('source', '')}+keepa_api".strip("+")
     note = "产品数据由 Keepa 补充" if changed else f"Keepa 未补到产品数据：{enrichment.get('message', '')}"
     message = str(record.get("message") or "")
     record["message"] = f"{message}；{note}" if message else note
@@ -1282,10 +1283,18 @@ class Handler(BaseHTTPRequestHandler):
                     if saved and saved.get("provider") == connection.get("provider") and saved.get("mode") == connection.get("mode"):
                         connection = saved
                 result = test_data_connection(connection)
+                product_result = None
+                product_connection = product_connection_from_form(form)
+                if product_connection.get("provider") == "keepa":
+                    if not connection_has_value(product_connection):
+                        raise ValueError("请填写 Keepa API Key")
+                    if HOSTED_MODE:
+                        validate_hosted_data_url(product_connection.get("api_url", ""), "Keepa API")
+                    product_result = test_data_connection(product_connection)
                 remember = (not HOSTED_MODE) and form.getfirst("remember_connection", "on") in {"on", "true", "1", "yes"}
                 if remember:
                     save_local_connection(owner_id, connection)
-                return self.send_json({"ok": True, "connection": result, "saved": remember, "hosted": HOSTED_MODE})
+                return self.send_json({"ok": True, "connection": result, "product_connection": product_result, "saved": remember, "hosted": HOSTED_MODE})
             if self.path == "/api/connection/clear":
                 form = form_from_request(self)
                 owner_id = sanitize_owner_id(form.getfirst("owner_id"))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import gzip
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -122,6 +123,7 @@ class FakeKeepa(KeepaApiClient):
         if path == "/product":
             return {"products": [{
                 "asin": "B000000001",
+                "rating": 167,
                 "monthlySold": 1234,
                 "stats": {"current": [2999, 3199, -1, 456, 3999, -1, -1, -1, 2599, -1, 2799, -1, -1, -1, -1, -1, 46, 789]},
                 "salesRanks": {"123": [600, 456], "456": [80, 45]},
@@ -173,6 +175,16 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(result["review_count"], 789)
         product_calls = [params for path, params, _ in client.requests if path == "/product"]
         self.assertEqual(product_calls[0]["domain"], 1)
+
+    def test_keepa_decodes_gzip_body(self):
+        body = gzip.compress("Keepa 参数错误".encode("utf-8"))
+        self.assertEqual(KeepaApiClient._decode_body(body), "Keepa 参数错误")
+
+    def test_keepa_error_does_not_mark_record_as_enriched(self):
+        record = {"source": "xiyou_mcp", "message": "", "raw": {}}
+        app.merge_product_enrichment(record, {"raw": {"product_error": "HTTP 400"}, "message": "HTTP 400"})
+        self.assertEqual(record["source"], "xiyou_mcp")
+        self.assertIn("Keepa 未补到产品数据", record["message"])
 
     def test_connection_normalization_and_redaction(self):
         connection = app.normalize_connection({
