@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Amazon 关键词监控工具 by kong</title>
   <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <main class="page-shell">
@@ -415,5 +416,10 @@
   </main>
   <div id="toast" class="toast"></div>
   <script src="/static/app.js"></script>
+  <script>
+    if (!window.__keywordTrackerLoaded && window.location.protocol === "file:") {
+      document.write('<script src="app.js"><\/script>');
+    }
+  </script>
 </body>
 </html>

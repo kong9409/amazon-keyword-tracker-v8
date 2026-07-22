@@ -1,4 +1,5 @@
 (() => {
+  window.__keywordTrackerLoaded = true;
   const $ = (id) => document.getElementById(id);
   const form = $("captureForm");
   const runButton = $("runCapture");
