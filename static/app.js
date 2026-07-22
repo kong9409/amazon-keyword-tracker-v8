@@ -8,6 +8,7 @@
   let jobTimer = null;
   let dailyControlTouched = false;
   let fieldMapping = null;
+  let allHistoryRecords = [];
 
   const tableFields = [
     "date", "asin", "keyword", "traffic_share", "aba_rank", "search_volume",
@@ -254,6 +255,202 @@
     anchor.remove();
   }
 
+  function setActiveTab(tabName) {
+    document.querySelectorAll(".tab-button").forEach(button => {
+      button.classList.toggle("active", button.dataset.tab === tabName);
+    });
+    $("tasksTab").hidden = tabName !== "tasks";
+    $("dashboardTab").hidden = tabName !== "dashboard";
+    $("tasksTab").classList.toggle("active", tabName === "tasks");
+    $("dashboardTab").classList.toggle("active", tabName === "dashboard");
+  }
+
+  function openSettingsDrawer() {
+    $("settingsDrawer").classList.add("open");
+    $("settingsDrawer").setAttribute("aria-hidden", "false");
+  }
+
+  function closeSettingsDrawer() {
+    $("settingsDrawer").classList.remove("open");
+    $("settingsDrawer").setAttribute("aria-hidden", "true");
+  }
+
+  function toNumber(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const normalized = String(value).replace(/[%,$,\s]/g, "");
+    const number = Number(normalized);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function average(values) {
+    const numbers = values.map(toNumber).filter(value => value !== null);
+    if (!numbers.length) return null;
+    return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+  }
+
+  function sum(values) {
+    const numbers = values.map(toNumber).filter(value => value !== null);
+    if (!numbers.length) return null;
+    return numbers.reduce((total, value) => total + value, 0);
+  }
+
+  function bestRank(values) {
+    const numbers = values.map(toNumber).filter(value => value !== null && value > 0);
+    return numbers.length ? Math.min(...numbers) : null;
+  }
+
+  function formatMetric(value, digits = 0, prefix = "") {
+    if (value === null || value === undefined || Number.isNaN(value)) return "-";
+    return `${prefix}${Number(value).toLocaleString("zh-CN", { maximumFractionDigits: digits, minimumFractionDigits: digits })}`;
+  }
+
+  function recordDate(record) {
+    const raw = String(record.date || "").slice(0, 10);
+    const date = raw ? new Date(`${raw}T00:00:00`) : null;
+    return date && !Number.isNaN(date.getTime()) ? date : null;
+  }
+
+  function weekKey(date) {
+    const copy = new Date(date);
+    const day = copy.getDay() || 7;
+    copy.setDate(copy.getDate() - day + 1);
+    return copy.toISOString().slice(0, 10);
+  }
+
+  function groupKey(record) {
+    const date = recordDate(record);
+    if (!date) return "";
+    return $("bucketMode").value === "week" ? weekKey(date) : date.toISOString().slice(0, 10);
+  }
+
+  function recordSource(record) {
+    return record.data_provider || record.source || record.source_name || record.provider || "";
+  }
+
+  function recordMarketplace(record) {
+    return record.marketplace || record.site || record.country || "";
+  }
+
+  function setSelectOptions(id, values, label) {
+    const select = $(id);
+    const current = select.value;
+    const options = [...new Set(values.filter(Boolean).map(String))].sort((a, b) => a.localeCompare(b, "zh-CN"));
+    select.innerHTML = `<option value="">全部${label}</option>${options.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("")}`;
+    if (options.includes(current)) select.value = current;
+  }
+
+  function updateDashboardOptions(records) {
+    setSelectOptions("filterAsin", records.map(record => record.asin), " ASIN");
+    setSelectOptions("filterKeyword", records.map(record => record.keyword), "关键词");
+    setSelectOptions("filterMarketplace", records.map(recordMarketplace), "站点");
+    setSelectOptions("filterSource", records.map(recordSource), "数据源");
+  }
+
+  function filteredHistory() {
+    const from = $("dateFrom").value ? new Date(`${$("dateFrom").value}T00:00:00`) : null;
+    const to = $("dateTo").value ? new Date(`${$("dateTo").value}T23:59:59`) : null;
+    const asin = $("filterAsin").value;
+    const keyword = $("filterKeyword").value;
+    const marketplace = $("filterMarketplace").value;
+    const source = $("filterSource").value;
+    return allHistoryRecords.filter(record => {
+      const date = recordDate(record);
+      if (from && (!date || date < from)) return false;
+      if (to && (!date || date > to)) return false;
+      if (asin && String(record.asin || "") !== asin) return false;
+      if (keyword && String(record.keyword || "") !== keyword) return false;
+      if (marketplace && String(recordMarketplace(record)) !== marketplace) return false;
+      if (source && String(recordSource(record)) !== source) return false;
+      return true;
+    });
+  }
+
+  function groupedRecords(records) {
+    const groups = new Map();
+    records.forEach(record => {
+      const key = groupKey(record);
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(record);
+    });
+    return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
+  }
+
+  function makeSeries(groups, field, reducer = average) {
+    return groups.map(([key, records]) => ({ key, value: reducer(records.map(record => record[field])) }))
+      .filter(point => point.value !== null);
+  }
+
+  function renderLineChart(containerId, seriesList, emptyText) {
+    const container = $(containerId);
+    const series = seriesList.filter(item => item.points.length);
+    if (!series.length) {
+      container.innerHTML = `<div class="chart-empty">${escapeHtml(emptyText)}</div>`;
+      return;
+    }
+    const labels = [...new Set(series.flatMap(item => item.points.map(point => point.key)))].sort();
+    const values = series.flatMap(item => item.points.map(point => point.value));
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const width = 720;
+    const height = 260;
+    const pad = { top: 20, right: 22, bottom: 44, left: 48 };
+    const x = (key) => {
+      const index = labels.indexOf(key);
+      return pad.left + (labels.length === 1 ? 0.5 : index / (labels.length - 1)) * (width - pad.left - pad.right);
+    };
+    const y = (value) => pad.top + (1 - (value - min) / range) * (height - pad.top - pad.bottom);
+    const grid = [0, .25, .5, .75, 1].map(step => {
+      const yy = pad.top + step * (height - pad.top - pad.bottom);
+      const label = max - step * range;
+      return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" stroke="#e6edf3"/><text x="8" y="${yy + 4}" fill="#64748b" font-size="11">${formatMetric(label, label < 10 ? 1 : 0)}</text>`;
+    }).join("");
+    const paths = series.map(item => {
+      const points = item.points.map(point => `${x(point.key)},${y(point.value)}`).join(" ");
+      const dots = item.points.map(point => `<circle cx="${x(point.key)}" cy="${y(point.value)}" r="3" fill="${item.color}"><title>${escapeHtml(item.name)} ${escapeHtml(point.key)}: ${formatMetric(point.value, 1)}</title></circle>`).join("");
+      return `<polyline fill="none" stroke="${item.color}" stroke-width="3" points="${points}" />${dots}`;
+    }).join("");
+    const xLabels = labels.map((label, index) => {
+      if (labels.length > 8 && index % Math.ceil(labels.length / 8) !== 0 && index !== labels.length - 1) return "";
+      return `<text x="${x(label)}" y="${height - 16}" fill="#64748b" font-size="11" text-anchor="middle">${escapeHtml(label.slice(5))}</text>`;
+    }).join("");
+    const legend = series.map((item, index) => `<g transform="translate(${pad.left + index * 126}, 12)"><circle r="4" fill="${item.color}"></circle><text x="10" y="4" fill="#102a43" font-size="12">${escapeHtml(item.name)}</text></g>`).join("");
+    container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img">${grid}<line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" stroke="#cad6e2"/>${paths}${xLabels}${legend}</svg>`;
+  }
+
+  function renderDashboard() {
+    updateDashboardOptions(allHistoryRecords);
+    const records = filteredHistory();
+    $("dashboardCount").textContent = `${records.length} 条`;
+    $("metricPrice").textContent = formatMetric(average(records.map(record => record.price)), 2, "¥");
+    $("metricSales").textContent = formatMetric(sum(records.map(record => record.estimated_sales)), 0);
+    $("metricRank").textContent = formatMetric(bestRank(records.map(record => record.product_rank)), 0);
+    $("metricSmallRank").textContent = formatMetric(bestRank(records.map(record => record.small_category_rank)), 0);
+    $("metricRating").textContent = formatMetric(average(records.map(record => record.rating)), 1);
+    $("metricReviews").textContent = formatMetric(sum(records.map(record => record.review_count)), 0);
+    const groups = groupedRecords(records);
+    const rankSeries = [
+      { name: "自然位", color: "#176b87", points: makeSeries(groups, "organic_position", bestRank) },
+      { name: "广告位", color: "#b45309", points: makeSeries(groups, "ad_position", bestRank) }
+    ];
+    const metricSeries = [
+      { name: "价格", color: "#176b87", points: makeSeries(groups, "price", average) },
+      { name: "月销量", color: "#087f5b", points: makeSeries(groups, "estimated_sales", sum) },
+      { name: "大类排名", color: "#c2410c", points: makeSeries(groups, "product_rank", bestRank) }
+    ];
+    $("rankChartSummary").textContent = groups.length ? `${groups.length} 个${$("bucketMode").value === "week" ? "周" : "日期"}` : "暂无数据";
+    $("metricChartSummary").textContent = groups.length ? `${records.length} 条记录` : "暂无数据";
+    renderLineChart("rankChart", rankSeries, "暂无排名趋势数据");
+    renderLineChart("metricChart", metricSeries, "暂无指标趋势数据");
+    renderRows(records);
+  }
+
+  function setHistoryRecords(records) {
+    allHistoryRecords = Array.isArray(records) ? records : [];
+    renderDashboard();
+  }
+
   function setProgress(job) {
     const statusText = {
       queued: "任务排队中", running: "正在抓取关键词数据", saving: "正在输出结果",
@@ -305,7 +502,7 @@
   async function loadHistory(showToast = false) {
     try {
       const payload = await api(`/api/history?owner_id=${encodeURIComponent(ownerId)}`);
-      renderRows(payload.records || []);
+      setHistoryRecords(payload.records || []);
       if (showToast) toast("结果已刷新");
     } catch (error) {
       if (showToast) toast(error.message, true);
@@ -362,7 +559,7 @@
         runButton.disabled = false;
         runButton.textContent = "开始抓取";
         const results = await api(`/api/jobs/${encodeURIComponent(jobId)}/results`);
-        renderRows(results.records || []);
+        setHistoryRecords(results.records || []);
         if (job.auto_download && job.excel) downloadFile(job.excel);
         if (job.lark && !job.lark.ok) {
           toast(`抓取完成，但飞书写入失败：${job.lark.message || "请检查配置"}`, true);
@@ -412,6 +609,13 @@
   });
 
   $("testConnection").addEventListener("click", testConnection);
+  $("openSettings").addEventListener("click", openSettingsDrawer);
+  $("openSettingsInline").addEventListener("click", openSettingsDrawer);
+  $("closeSettings").addEventListener("click", closeSettingsDrawer);
+  $("closeSettingsScrim").addEventListener("click", closeSettingsDrawer);
+  document.querySelectorAll(".tab-button").forEach(button => {
+    button.addEventListener("click", () => setActiveTab(button.dataset.tab));
+  });
   $("dataProvider").addEventListener("change", showConnectionFields);
   $("sorftimeMode").addEventListener("change", showConnectionFields);
   $("xiyouMode").addEventListener("change", showConnectionFields);
@@ -419,6 +623,9 @@
   $("outputMode").addEventListener("change", showOutputFields);
   $("dailyEnabled").addEventListener("change", () => { dailyControlTouched = true; });
   $("refreshHistory").addEventListener("click", () => loadHistory(true));
+  ["dateFrom", "dateTo", "bucketMode", "filterAsin", "filterKeyword", "filterMarketplace", "filterSource"].forEach(id => {
+    $(id).addEventListener("change", renderDashboard);
+  });
 
   async function initialize() {
     try {
