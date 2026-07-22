@@ -5,6 +5,7 @@ import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -59,6 +60,7 @@ PROVIDER_LABELS = {
     "sellersprite": "卖家精灵",
     "sif": "SIF",
     "xiyou": "西柚洞察",
+    "keepa": "Keepa",
     "custom": "其他软件",
 }
 
@@ -1417,6 +1419,176 @@ class GenericApiClient(BaseApiClient):
         )
 
 
+class KeepaApiClient(BaseApiClient):
+    source_name = "keepa_api"
+    provider_name = "Keepa"
+
+    DOMAIN_IDS = {
+        "US": 1, "UK": 2, "GB": 2, "DE": 3, "FR": 4, "JP": 5, "CA": 6,
+        "IT": 8, "ES": 9, "IN": 10, "MX": 11, "BR": 12, "AU": 13,
+    }
+
+    CURRENT_AMAZON = 0
+    CURRENT_NEW = 1
+    CURRENT_SALES = 3
+    CURRENT_LIST = 4
+    CURRENT_DEAL = 8
+    CURRENT_FBA = 10
+    CURRENT_RATING = 16
+    CURRENT_REVIEWS = 17
+
+    def __init__(self, api_key: str, base_url: str = "https://api.keepa.com") -> None:
+        if not api_key.strip():
+            raise ValueError("请填写 Keepa API Key")
+        super().__init__(base_url or "https://api.keepa.com", api_key)
+        self._product_cache: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def headers(self) -> dict[str, str]:
+        return {"Accept": "application/json", "Accept-Encoding": "gzip"}
+
+    def _get(self, path: str, params: dict[str, Any], *, tool_name: str) -> Any:
+        query = urllib.parse.urlencode({key: value for key, value in params.items() if value not in EMPTY})
+        url = f"{self.base_url}/{path.lstrip('/')}?{query}"
+        request = urllib.request.Request(url, headers=self.headers(), method="GET")
+        started = time.perf_counter()
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                text = response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:800]
+            raise RuntimeError(f"Keepa API HTTP {exc.code}：{detail or exc.reason}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"无法连接 Keepa API：{exc.reason}") from exc
+        finally:
+            elapsed = time.perf_counter() - started
+            with self._lock:
+                self._calls += 1
+                self._tool_calls[tool_name] += 1
+                self._tool_seconds[tool_name] += elapsed
+        data = deep_parse_json(text) if text.strip() else {}
+        if isinstance(data, dict) and data.get("error"):
+            error = data.get("error") or {}
+            if isinstance(error, dict):
+                raise RuntimeError(error.get("message") or error.get("type") or "Keepa API 返回错误")
+            raise RuntimeError(str(error))
+        return data
+
+    @classmethod
+    def domain_id(cls, marketplace: str) -> int:
+        return cls.DOMAIN_IDS.get(normalize_marketplace(marketplace), 1)
+
+    @staticmethod
+    def _keepa_price(value: Any) -> Any:
+        number = normalize_number(value)
+        if number in EMPTY or number == -1:
+            return ""
+        if isinstance(number, (int, float)):
+            return round(number / 100, 2)
+        return ""
+
+    @staticmethod
+    def _current(stats: Any, index: int) -> Any:
+        if not isinstance(stats, dict):
+            return ""
+        current = stats.get("current")
+        if isinstance(current, list) and len(current) > index:
+            return current[index]
+        return ""
+
+    @staticmethod
+    def _rating(value: Any) -> Any:
+        number = normalize_number(value)
+        if number in EMPTY or number == -1:
+            return ""
+        if isinstance(number, (int, float)) and number > 5:
+            return round(number / 10, 1)
+        return number
+
+    @staticmethod
+    def _rank(product: dict[str, Any], stats: dict[str, Any]) -> tuple[Any, Any]:
+        main = KeepaApiClient._current(stats, KeepaApiClient.CURRENT_SALES)
+        if main in EMPTY or main == -1:
+            main = first_non_empty(product.get("salesRank"), product.get("salesRankReference"))
+        ranks = product.get("salesRanks")
+        small = ""
+        if isinstance(ranks, dict):
+            candidates = []
+            for values in ranks.values():
+                if isinstance(values, list) and values:
+                    value = values[-1]
+                    if value not in EMPTY and value != -1:
+                        candidates.append(value)
+            if candidates:
+                small = candidates[-1]
+        return main, small
+
+    def check_ready(self) -> dict[str, Any]:
+        status = self._get("/token", {"key": self.api_key}, tool_name="token")
+        return {
+            "source": self.source_name,
+            "tool_count": 2,
+            "recognized_tools": ["token", "product"],
+            "missing_tools": [],
+            "tokens_left": status.get("tokensLeft"),
+            "note": f"Keepa API Key 已验证；剩余 tokens：{status.get('tokensLeft', '未知')}。",
+        }
+
+    def _product(self, asin: str, site: str) -> dict[str, Any]:
+        key = (asin, site)
+        if key not in self._product_cache:
+            payload = self._get(
+                "/product",
+                {
+                    "key": self.api_key,
+                    "domain": self.domain_id(site),
+                    "asin": asin,
+                    "stats": 90,
+                    "history": 0,
+                    "rating": 1,
+                },
+                tool_name="product",
+            )
+            products = payload.get("products") if isinstance(payload, dict) else None
+            self._product_cache[key] = products[0] if isinstance(products, list) and products else {}
+        return self._product_cache[key]
+
+    def capture_keyword(self, asin: str, keyword: str, marketplace: str) -> dict[str, Any]:
+        site = normalize_marketplace(marketplace)
+        asin = asin.strip().upper()
+        raw: dict[str, Any] = {}
+        try:
+            product = self._product(asin, site)
+            raw["product"] = product
+        except Exception as exc:
+            product = {}
+            raw["product_error"] = str(exc)
+        stats = product.get("stats") if isinstance(product, dict) else {}
+        stats = stats if isinstance(stats, dict) else {}
+        main_rank, small_rank = self._rank(product, stats) if isinstance(product, dict) else ("", "")
+        price = first_non_empty(
+            self._keepa_price(self._current(stats, self.CURRENT_AMAZON)),
+            self._keepa_price(self._current(stats, self.CURRENT_NEW)),
+            self._keepa_price(self._current(stats, self.CURRENT_FBA)),
+        )
+        deal_price = self._keepa_price(self._current(stats, self.CURRENT_DEAL))
+        return _finish_result(
+            provider=self.provider_name,
+            asin=asin,
+            site=site,
+            raw=raw,
+            price=price,
+            coupon_value=first_non_empty(product.get("coupon"), product.get("couponOneTimePercent"), product.get("couponOneTimeAbsolute")) if isinstance(product, dict) else "",
+            deal_price=deal_price,
+            prime_price=self._keepa_price(self._current(stats, self.CURRENT_FBA)),
+            sales=product.get("monthlySold", "") if isinstance(product, dict) else "",
+            product_rank=main_rank,
+            small_category_rank=small_rank,
+            rating=first_non_empty(product.get("rating") if isinstance(product, dict) else "", self._rating(self._current(stats, self.CURRENT_RATING))),
+            review_count=first_non_empty(product.get("reviewCount") if isinstance(product, dict) else "", self._current(stats, self.CURRENT_REVIEWS)),
+            product_url=amazon_product_url(asin, site),
+        )
+
+
 def build_data_client(connection: dict[str, Any] | None = None) -> DataClient:
     connection = connection or {}
     provider = str(connection.get("provider") or "sorftime").lower()
@@ -1438,6 +1610,8 @@ def build_data_client(connection: dict[str, Any] | None = None) -> DataClient:
         if not token.strip():
             raise ValueError("请填写 SIF MCP Key")
         return GenericMcpClient(url, token, provider_name="SIF", source_name="sif_mcp")
+    if provider == "keepa":
+        return KeepaApiClient(str(connection.get("api_key") or ""), str(connection.get("api_url") or "https://api.keepa.com"))
     if provider == "custom":
         if mode == "api":
             return GenericApiClient(str(connection.get("api_url") or ""), str(connection.get("api_key") or ""), str(connection.get("api_key_header") or "Authorization"))

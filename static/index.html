@@ -97,7 +97,7 @@
                 </label>
 
                 <label class="control setting-card">
-                  <span>数据源软件</span>
+                  <span>关键词数据源</span>
                   <select name="data_provider" id="dataProvider">
                     <option value="sorftime" selected>Sorftime（MCP / CLI）</option>
                     <option value="sellersprite">卖家精灵（MCP）</option>
@@ -105,7 +105,7 @@
                     <option value="xiyou">西柚洞察（MCP / API）</option>
                     <option value="custom">其他软件（MCP / API）</option>
                   </select>
-                  <small>连接凭证在设置抽屉中一次性配置。</small>
+                  <small>自然位、广告位、ABA、搜索量等关键词指标由这里选择；产品指标由 Keepa 补充。</small>
                 </label>
 
                 <label class="control setting-card">
@@ -382,6 +382,31 @@
             <div class="connection-footer">
               <span></span>
               <span id="connectionStatus" class="connection-status">填写连接信息后可直接测试或开始抓取</span>
+            </div>
+          </section>
+
+          <section class="drawer-block">
+            <div class="section-head output-title">
+              <div>
+                <p class="eyebrow">PRODUCT DATA</p>
+                <h2>Keepa 产品数据</h2>
+              </div>
+            </div>
+            <label class="check-card setting-card auto-download-card">
+              <input type="checkbox" name="keepa_enabled" id="keepaEnabled" checked />
+              <span><strong>使用 Keepa 补充产品指标</strong><small>价格、促销、月销量、BSR、评分、评价数来自 Keepa；关键词排名仍由上方数据源抓取。</small></span>
+            </label>
+            <div class="form-grid feishu-grid keepa-grid" id="keepaFields">
+              <label class="control setting-card">
+                <span>Keepa API Key</span>
+                <input name="keepa_api_key" id="keepaApiKey" type="password" autocomplete="off" placeholder="粘贴 Keepa API Key" />
+                <small>Key 只随当前任务提交；任务日志和历史记录不会明文保存。</small>
+              </label>
+              <label class="control setting-card">
+                <span>Keepa API Base URL</span>
+                <input name="keepa_api_url" id="keepaApiUrl" autocomplete="off" value="https://api.keepa.com" />
+                <small>通常保持默认值。</small>
+              </label>
             </div>
           </section>
 

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import app
-from provider_adapter import GenericApiClient, GenericMcpClient, SellerSpriteMcpClient, XiyouApiClient, XiyouMcpClient, build_data_client
+from provider_adapter import GenericApiClient, GenericMcpClient, KeepaApiClient, SellerSpriteMcpClient, XiyouApiClient, XiyouMcpClient, build_data_client
 
 
 class FakeSellerSprite(SellerSpriteMcpClient):
@@ -110,6 +110,25 @@ class FakeXiyou(XiyouApiClient):
         raise AssertionError(path)
 
 
+class FakeKeepa(KeepaApiClient):
+    def __init__(self):
+        super().__init__("secret")
+        self.requests = []
+
+    def _get(self, path, params, *, tool_name):
+        self.requests.append((path, params, tool_name))
+        if path == "/token":
+            return {"tokensLeft": 99}
+        if path == "/product":
+            return {"products": [{
+                "asin": "B000000001",
+                "monthlySold": 1234,
+                "stats": {"current": [2999, 3199, -1, 456, 3999, -1, -1, -1, 2599, -1, 2799, -1, -1, -1, -1, -1, 46, 789]},
+                "salesRanks": {"123": [600, 456], "456": [80, 45]},
+            }]}
+        raise AssertionError(path)
+
+
 class ProviderTests(unittest.TestCase):
     def test_sellersprite_maps_required_fields(self):
         client = FakeSellerSprite()
@@ -139,6 +158,22 @@ class ProviderTests(unittest.TestCase):
         info_payloads = [payload for _, path, payload in client.requests if path == "/v1/asins/info"]
         self.assertEqual(info_payloads, [{"entities": [{"country": "US", "asin": "B000000001"}]}])
 
+    def test_keepa_maps_product_metrics(self):
+        client = FakeKeepa()
+        ready = client.check_ready()
+        result = client.capture_keyword("B000000001", "关键词1", "US")
+        self.assertEqual(ready["tokens_left"], 99)
+        self.assertEqual(result["price"], 29.99)
+        self.assertEqual(result["deal_price"], 25.99)
+        self.assertEqual(result["prime_discount_price"], 27.99)
+        self.assertEqual(result["estimated_sales"], 1234)
+        self.assertEqual(result["product_rank"], 456)
+        self.assertEqual(result["small_category_rank"], 45)
+        self.assertEqual(result["rating"], 4.6)
+        self.assertEqual(result["review_count"], 789)
+        product_calls = [params for path, params, _ in client.requests if path == "/product"]
+        self.assertEqual(product_calls[0]["domain"], 1)
+
     def test_connection_normalization_and_redaction(self):
         connection = app.normalize_connection({
             "provider": "sellersprite", "mode": "mcp_url",
@@ -146,10 +181,20 @@ class ProviderTests(unittest.TestCase):
         })
         self.assertTrue(app.connection_has_value(connection))
         self.assertEqual(connection["mcp_url"], "https://mcp.sellersprite.com/mcp")
+        keepa = app.normalize_connection({"provider": "keepa", "api_key": "secret"})
+        self.assertTrue(app.connection_has_value(keepa))
+        self.assertEqual(keepa["api_url"], "https://api.keepa.com")
         clean = app.sanitize_payload_for_disk({"connection": connection, "lark": {"feishu_app_secret": "secret"}})
         self.assertEqual(clean["connection"]["provider"], "sellersprite")
         self.assertEqual(clean["connection"]["mcp_token"], "")
         self.assertEqual(clean["lark"]["feishu_app_secret"], "")
+        clean = app.sanitize_payload_for_disk({
+            "connection": connection,
+            "product_connection": keepa,
+            "lark": {"feishu_app_secret": "secret"},
+        })
+        self.assertEqual(clean["product_connection"]["provider"], "keepa")
+        self.assertEqual(clean["product_connection"]["api_key"], "")
 
     def test_build_provider_clients(self):
         sellersprite = build_data_client({"provider": "sellersprite", "mode": "mcp_url", "mcp_url": "https://mcp.example.com/mcp", "mcp_token": "x"})
@@ -157,6 +202,7 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(sellersprite.url, "https://mcp.sellersprite.com/mcp")
         self.assertEqual(sellersprite._auth_headers(), {"secret-key": "x"})
         self.assertEqual(build_data_client({"provider": "xiyou", "mode": "api", "api_key": "x"}).source_name, "xiyou_api")
+        self.assertEqual(build_data_client({"provider": "keepa", "mode": "api", "api_key": "x"}).source_name, "keepa_api")
         self.assertEqual(build_data_client({"provider": "xiyou", "mode": "mcp_url", "mcp_url": "https://mcp.xydc.com/mcp", "mcp_token": "x"}).source_name, "xiyou_mcp")
         self.assertEqual(build_data_client({"provider": "sif", "mode": "mcp_url", "mcp_url": "https://mcp.sif.com/mcp", "mcp_token": "x"}).source_name, "sif_mcp")
         self.assertIsInstance(build_data_client({"provider": "custom", "mode": "api", "api_url": "https://example.com/data"}), GenericApiClient)

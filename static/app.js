@@ -143,6 +143,13 @@
     $("customApiUrl").required = selectedProvider() === "custom" && isApi;
   }
 
+  function showKeepaFields() {
+    const enabled = $("keepaEnabled").checked;
+    $("keepaFields").hidden = !enabled;
+    $("keepaApiKey").required = enabled;
+    $("keepaApiUrl").required = enabled;
+  }
+
   function showConnectionFields() {
     const provider = selectedProvider();
     const sections = {
@@ -161,7 +168,7 @@
     $("sifMcpUrl").required = provider === "sif";
     $("sifMcpToken").required = provider === "sif";
 
-    let detail = "填写连接信息后可直接测试或开始抓取";
+    let detail = "填写关键词数据源连接信息后可直接测试或开始抓取";
     if (provider === "sorftime") detail = $("sorftimeMode").value === "mcp_url" ? "填写 Sorftime MCP URL 和 Token" : "填写 Sorftime CLI Account-SK";
     if (provider === "sellersprite") detail = "卖家精灵 MCP URL 已内置；输入 Key 后按官方工具 Code 直接调用";
     if (provider === "sif") detail = "填写 SIF MCP URL 和 MCP Key";
@@ -622,6 +629,7 @@
   $("xiyouMode").addEventListener("change", showConnectionFields);
   $("customMode").addEventListener("change", showConnectionFields);
   $("outputMode").addEventListener("change", showOutputFields);
+  $("keepaEnabled").addEventListener("change", showKeepaFields);
   $("dailyEnabled").addEventListener("change", () => { dailyControlTouched = true; });
   $("refreshHistory").addEventListener("click", () => loadHistory(true));
   ["dateFrom", "dateTo", "bucketMode", "filterAsin", "filterKeyword", "filterMarketplace", "filterSource"].forEach(id => {
@@ -637,6 +645,7 @@
     }
     showConnectionFields();
     showOutputFields();
+    showKeepaFields();
     await Promise.all([loadFieldMapping(), loadHistory(false), loadDailyStatus()]);
     window.setInterval(loadDailyStatus, 60000);
   }
