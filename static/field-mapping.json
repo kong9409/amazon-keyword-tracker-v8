@@ -1,0 +1,466 @@
+{
+  "version": "7.4",
+  "source_file": "各插件mcp目录表.xlsx",
+  "source_labels": {
+    "sorftime_cli": "Sorftime CLI",
+    "sorftime_mcp": "Sorftime MCP",
+    "sif_mcp": "SIF MCP",
+    "xiyou_mcp": "西柚洞察 MCP",
+    "xiyou_api": "西柚洞察 API",
+    "custom_mcp": "其他软件 MCP",
+    "custom_api": "其他软件 API",
+    "sellersprite_mcp": "卖家精灵 MCP"
+  },
+  "fields": [
+    {
+      "key": "date",
+      "label": "日期",
+      "format": "日期",
+      "sources": {
+        "default": {
+          "tool": "本地生成",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "asin",
+      "label": "ASIN",
+      "format": "文本",
+      "sources": {
+        "default": {
+          "tool": "用户输入",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "keyword",
+      "label": "关键词",
+      "format": "文本",
+      "sources": {
+        "default": {
+          "tool": "用户输入 + 接口匹配",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "traffic_share",
+      "label": "流量占比",
+      "format": "百分比 · 2位小数",
+      "sources": {
+        "sorftime_mcp": {
+          "tool": "product_traffic_terms",
+          "status": "full"
+        },
+        "sorftime_cli": {
+          "tool": "ASINRequestKeywordv2",
+          "status": "full"
+        },
+        "sif_mcp": {
+          "tool": "动态匹配流量词/ASIN反查工具",
+          "status": "dynamic"
+        },
+        "xiyou_mcp": {
+          "tool": "get_asin_keyword_traffic_trends → get_asin_keywords",
+          "status": "full"
+        },
+        "xiyou_api": {
+          "tool": "ASIN反查关键词接口 · trafficAcquisitionRate",
+          "status": "full"
+        },
+        "custom_mcp": {
+          "tool": "动态匹配 trafficShare 字段",
+          "status": "dynamic"
+        },
+        "custom_api": {
+          "tool": "trafficShare / trafficPercentage",
+          "status": "dynamic"
+        },
+        "sellersprite_mcp": {
+          "tool": "traffic_keyword / traffic_keyword_stat",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "aba_rank",
+      "label": "ABA热度",
+      "format": "整数",
+      "sources": {
+        "sorftime_mcp": {
+          "tool": "keyword_detail",
+          "status": "full"
+        },
+        "sorftime_cli": {
+          "tool": "KeywordRequest",
+          "status": "full"
+        },
+        "sif_mcp": {
+          "tool": "动态匹配 ABA/关键词详情工具",
+          "status": "dynamic"
+        },
+        "xiyou_mcp": {
+          "tool": "get_keyword_info → get_keyword_aba_trends",
+          "status": "full"
+        },
+        "xiyou_api": {
+          "tool": "searchTerms/info · searchFrequencyRank",
+          "status": "full"
+        },
+        "custom_mcp": {
+          "tool": "动态匹配 searchFrequencyRank",
+          "status": "dynamic"
+        },
+        "custom_api": {
+          "tool": "abaRank / searchFrequencyRank",
+          "status": "dynamic"
+        },
+        "sellersprite_mcp": {
+          "tool": "aba_research_weekly / aba_research_monthly",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "search_volume",
+      "label": "搜索量",
+      "format": "整数",
+      "sources": {
+        "sorftime_mcp": {
+          "tool": "keyword_detail",
+          "status": "full"
+        },
+        "sorftime_cli": {
+          "tool": "KeywordRequest",
+          "status": "full"
+        },
+        "sif_mcp": {
+          "tool": "动态匹配关键词详情工具",
+          "status": "dynamic"
+        },
+        "xiyou_mcp": {
+          "tool": "get_keyword_info",
+          "status": "full"
+        },
+        "xiyou_api": {
+          "tool": "searchTerms/info · weeklySearchVolume",
+          "status": "full"
+        },
+        "custom_mcp": {
+          "tool": "动态匹配 searchVolume",
+          "status": "dynamic"
+        },
+        "custom_api": {
+          "tool": "searchVolume / weeklySearchVolume",
+          "status": "dynamic"
+        },
+        "sellersprite_mcp": {
+          "tool": "keyword_research / aba_research",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "organic_position",
+      "label": "自然位",
+      "format": "整数/位置",
+      "sources": {
+        "sorftime_mcp": {
+          "tool": "keyword_search_results(positionType=0)",
+          "status": "full"
+        },
+        "sorftime_cli": {
+          "tool": "ASINRequestKeywordv2",
+          "status": "full"
+        },
+        "sif_mcp": {
+          "tool": "动态匹配 ASIN关键词排名工具",
+          "status": "dynamic"
+        },
+        "xiyou_mcp": {
+          "tool": "get_asin_keyword_rank_trends · 自然位",
+          "status": "full"
+        },
+        "xiyou_api": {
+          "tool": "ASIN反查结果 · ranks.position=or",
+          "status": "full"
+        },
+        "custom_mcp": {
+          "tool": "动态匹配 organicPosition",
+          "status": "dynamic"
+        },
+        "custom_api": {
+          "tool": "organicPosition / naturalRank",
+          "status": "dynamic"
+        },
+        "sellersprite_mcp": {
+          "tool": "traffic_keyword · rankPosition",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "ad_position",
+      "label": "广告位",
+      "format": "整数/位置",
+      "sources": {
+        "sorftime_mcp": {
+          "tool": "keyword_search_results(positionType=2)",
+          "status": "full"
+        },
+        "sorftime_cli": {
+          "tool": "ASINRequestKeywordv2（接口返回时）",
+          "status": "conditional"
+        },
+        "sif_mcp": {
+          "tool": "动态匹配广告排名工具",
+          "status": "dynamic"
+        },
+        "xiyou_mcp": {
+          "tool": "get_asin_keyword_rank_trends · 广告位",
+          "status": "full"
+        },
+        "xiyou_api": {
+          "tool": "ASIN反查结果 · ranks.position=sp",
+          "status": "full"
+        },
+        "custom_mcp": {
+          "tool": "动态匹配 adPosition",
+          "status": "dynamic"
+        },
+        "custom_api": {
+          "tool": "adPosition / sponsoredRank",
+          "status": "dynamic"
+        },
+        "sellersprite_mcp": {
+          "tool": "traffic_keyword · adPosition",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "price",
+      "label": "价格",
+      "format": "金额",
+      "sources": {
+        "sorftime_mcp": {
+          "tool": "product_detail → product_trend(Price)",
+          "status": "full"
+        },
+        "sorftime_cli": {
+          "tool": "ProductRequest",
+          "status": "full"
+        },
+        "sif_mcp": {
+          "tool": "动态匹配 ASIN详情工具",
+          "status": "dynamic"
+        },
+        "xiyou_mcp": {
+          "tool": "get_asin_info → get_asin_info_trends",
+          "status": "full"
+        },
+        "xiyou_api": {
+          "tool": "asins/info · price",
+          "status": "full"
+        },
+        "custom_mcp": {
+          "tool": "动态匹配 price",
+          "status": "dynamic"
+        },
+        "custom_api": {
+          "tool": "price / listingPrice",
+          "status": "dynamic"
+        },
+        "sellersprite_mcp": {
+          "tool": "asin_detail / keepa_info",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "coupon_value",
+      "label": "优惠券",
+      "format": "文本/金额/百分比",
+      "sources": {
+        "default": {
+          "tool": "产品详情接口实际返回时写入",
+          "status": "conditional"
+        }
+      }
+    },
+    {
+      "key": "deal_price",
+      "label": "秒杀价",
+      "format": "金额",
+      "sources": {
+        "default": {
+          "tool": "产品详情接口实际返回时写入",
+          "status": "conditional"
+        }
+      }
+    },
+    {
+      "key": "prime_discount_price",
+      "label": "Prime价",
+      "format": "金额",
+      "sources": {
+        "default": {
+          "tool": "产品详情接口实际返回时写入",
+          "status": "conditional"
+        }
+      }
+    },
+    {
+      "key": "estimated_sales",
+      "label": "月销量",
+      "format": "整数",
+      "sources": {
+        "sorftime_mcp": {
+          "tool": "product_detail → product_trend(SalesVolume)",
+          "status": "full"
+        },
+        "sorftime_cli": {
+          "tool": "ProductRequest",
+          "status": "full"
+        },
+        "sif_mcp": {
+          "tool": "动态匹配销量/订单工具",
+          "status": "dynamic"
+        },
+        "xiyou_mcp": {
+          "tool": "get_asin_order_trends · 当月销量",
+          "status": "full"
+        },
+        "xiyou_api": {
+          "tool": "asins/orders · 当月订单量",
+          "status": "full"
+        },
+        "custom_mcp": {
+          "tool": "动态匹配 monthlySales / orders",
+          "status": "dynamic"
+        },
+        "custom_api": {
+          "tool": "monthlySales / orderCount",
+          "status": "dynamic"
+        },
+        "sellersprite_mcp": {
+          "tool": "competitor_lookup / asin_sales_trend",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "product_rank",
+      "label": "大类排名",
+      "format": "整数",
+      "sources": {
+        "sorftime_mcp": {
+          "tool": "product_detail → product_trend(Rank)",
+          "status": "full"
+        },
+        "sorftime_cli": {
+          "tool": "ProductRequest",
+          "status": "full"
+        },
+        "sif_mcp": {
+          "tool": "动态匹配 BSR/类目排名工具",
+          "status": "dynamic"
+        },
+        "xiyou_mcp": {
+          "tool": "get_asin_bsr_trends · 根类目",
+          "status": "full"
+        },
+        "xiyou_api": {
+          "tool": "bsrInfo/trends/daily · 根类目",
+          "status": "full"
+        },
+        "custom_mcp": {
+          "tool": "动态匹配 rootCategoryRank",
+          "status": "dynamic"
+        },
+        "custom_api": {
+          "tool": "productRank / rootCategoryRank",
+          "status": "dynamic"
+        },
+        "sellersprite_mcp": {
+          "tool": "asin_detail / keepa_info · 根类目BSR",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "small_category_rank",
+      "label": "小类排名",
+      "format": "整数",
+      "sources": {
+        "sorftime_mcp": {
+          "tool": "product_detail · 子类/细分类BSR",
+          "status": "conditional"
+        },
+        "sorftime_cli": {
+          "tool": "ProductRequest · 子类排名",
+          "status": "conditional"
+        },
+        "sif_mcp": {
+          "tool": "动态匹配子类/细分类排名",
+          "status": "dynamic"
+        },
+        "xiyou_mcp": {
+          "tool": "get_asin_bsr_trends · 最深非根类目",
+          "status": "full"
+        },
+        "xiyou_api": {
+          "tool": "bsrInfo/trends/daily · 最深非根类目",
+          "status": "full"
+        },
+        "custom_mcp": {
+          "tool": "动态匹配 subCategoryRank",
+          "status": "dynamic"
+        },
+        "custom_api": {
+          "tool": "smallCategoryRank / subCategoryRank",
+          "status": "dynamic"
+        },
+        "sellersprite_mcp": {
+          "tool": "asin_detail / keepa_info · 小类BSR",
+          "status": "conditional"
+        }
+      }
+    },
+    {
+      "key": "rating",
+      "label": "评分",
+      "format": "小数",
+      "sources": {
+        "default": {
+          "tool": "ASIN商品详情接口",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "review_count",
+      "label": "评价数",
+      "format": "整数",
+      "sources": {
+        "default": {
+          "tool": "ASIN商品详情接口",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "product_url",
+      "label": "链接",
+      "format": "URL",
+      "sources": {
+        "default": {
+          "tool": "接口返回或按站点本地生成",
+          "status": "full"
+        }
+      }
+    }
+  ]
+}
