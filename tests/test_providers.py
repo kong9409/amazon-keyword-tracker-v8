@@ -196,9 +196,9 @@ class ProviderTests(unittest.TestCase):
         body = gzip.compress("Keepa 参数错误".encode("utf-8"))
         self.assertEqual(KeepaApiClient._decode_body(body), "Keepa 参数错误")
 
-    def test_keepa_accepts_display_key_with_separator(self):
+    def test_keepa_preserves_separator_in_api_key(self):
         client = KeepaApiClient("km_" + "a" * 32)
-        self.assertEqual(client.headers()["X-API-Key"], "km" + "a" * 32)
+        self.assertEqual(client.headers()["X-API-Key"], "km_" + "a" * 32)
 
     def test_keepa_error_does_not_mark_record_as_enriched(self):
         record = {"source": "xiyou_mcp", "message": "", "raw": {}}

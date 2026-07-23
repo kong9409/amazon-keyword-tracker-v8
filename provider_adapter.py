@@ -1449,10 +1449,7 @@ class KeepaApiClient(BaseApiClient):
 
     @staticmethod
     def _normalize_api_key(api_key: str) -> str:
-        value = str(api_key or "").strip()
-        if value.startswith("km_") and len(value) == 35:
-            return f"km{value[3:]}"
-        return value
+        return str(api_key or "").strip()
 
     def headers(self) -> dict[str, str]:
         return {"Accept": "application/json", "X-API-Key": self.api_key}
