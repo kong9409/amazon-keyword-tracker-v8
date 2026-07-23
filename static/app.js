@@ -437,6 +437,12 @@
     renderDashboard();
   }
 
+  function sumToolCalls(toolCalls, predicate) {
+    return Object.entries(toolCalls || {}).reduce((total, [name, count]) => {
+      return predicate(name) ? total + Number(count || 0) : total;
+    }, 0);
+  }
+
   function setProgress(job) {
     const statusText = {
       queued: "任务排队中", running: "正在抓取关键词数据", saving: "正在输出结果",
@@ -448,13 +454,18 @@
     $("progressSub").textContent = job.error || larkMessage || (["completed", "completed_with_warning"].includes(job.status) ? "结果已生成。" : "正在调用所选数据源的 Amazon 数据接口。");
     $("progressPct").textContent = `${percent}%`;
     $("progressFill").style.width = `${Math.max(0, Math.min(100, percent))}%`;
-    $("mcpCalls").textContent = String(job.mcp_calls || 0);
+    const toolCalls = job.tool_calls || {};
+    const keepaCalls = sumToolCalls(toolCalls, name => String(name).startsWith("keepa:"));
+    const totalCalls = Number(job.mcp_calls || 0);
+    $("mcpCalls").textContent = keepaCalls ? `${totalCalls}（Keepamore ${keepaCalls}）` : String(totalCalls);
     $("elapsedTime").textContent = `${Number(job.elapsed_seconds || 0).toFixed(2)} 秒`;
     $("doneCount").textContent = `${job.done || 0} / ${job.total || 0}`;
     $("recordCount").textContent = String(job.records_count || 0);
-    const toolSummary = Object.entries(job.tool_calls || {}).map(([name, count]) => `${name}: ${count}`).join(" · ");
+    const pluginCalls = keepaCalls ? Math.max(0, totalCalls - keepaCalls) : totalCalls;
+    const callBreakdown = keepaCalls ? `调用拆分：插件 ${pluginCalls} 次 · Keepamore ${keepaCalls} 次 · 总计 ${totalCalls} 次` : "";
+    const toolSummary = Object.entries(toolCalls).map(([name, count]) => `${name}: ${count}`).join(" · ");
     const logs = Array.isArray(job.logs) ? job.logs.join("\n") : "暂无运行日志";
-    $("logBox").textContent = toolSummary ? `${logs}\n\n接口调用：${toolSummary}` : logs;
+    $("logBox").textContent = [logs, callBreakdown, toolSummary ? `接口调用：${toolSummary}` : ""].filter(Boolean).join("\n\n");
     $("logBox").scrollTop = $("logBox").scrollHeight;
     const links = [];
     if (job.excel) links.push(`<a href="${escapeHtml(job.excel)}" download>下载 Excel</a>`);
