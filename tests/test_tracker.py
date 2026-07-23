@@ -647,6 +647,12 @@ class TrackerTests(unittest.TestCase):
             thread.join()
         self.assertEqual(errors, [])
 
+    def test_job_owner_must_match_for_private_results(self) -> None:
+        job = {"payload": {"owner_id": "browser_1234567890abcdef"}}
+        self.assertTrue(app.job_owner_matches(job, "browser_1234567890abcdef"))
+        self.assertFalse(app.job_owner_matches(job, "browser_abcdef1234567890"))
+        self.assertFalse(app.job_owner_matches(job, ""))
+
 
 if __name__ == "__main__":
     unittest.main()

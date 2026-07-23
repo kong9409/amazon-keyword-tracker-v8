@@ -833,6 +833,13 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def job_owner_matches(job: dict[str, Any], owner_id: str) -> bool:
+    safe_owner = sanitize_owner_id(owner_id)
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    job_owner = sanitize_owner_id(str(payload.get("owner_id") or ""))
+    return bool(safe_owner and job_owner and safe_owner == job_owner)
+
+
 def public_daily_config(config: dict[str, Any] | None) -> dict[str, Any] | None:
     if not config:
         return None
@@ -1252,8 +1259,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/api/jobs/"):
             parts = parsed.path.strip("/").split("/")
             job_id = parts[2] if len(parts) >= 3 else ""
+            owner_id = parse_qs(parsed.query).get("owner_id", [""])[0]
             job = read_json(job_path(job_id))
-            if not job:
+            if not job or not job_owner_matches(job, owner_id):
                 return self.send_json({"ok": False, "error": "任务不存在或服务已重启"}, 404)
             if len(parts) == 4 and parts[3] == "results":
                 return self.send_json({"ok": True, "records": job.get("records", [])})

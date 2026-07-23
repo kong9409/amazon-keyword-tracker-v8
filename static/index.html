@@ -16,7 +16,6 @@
       </div>
       <div class="header-actions">
         <div class="source-pill source-off" id="sourceBadge">Sorftime 未连接</div>
-        <button type="button" class="secondary icon-button" id="openSettings" aria-label="打开设置">设置</button>
       </div>
     </header>
 
@@ -92,9 +91,196 @@
                     <option value="lark">写入飞书</option>
                     <option value="both">下载 Excel + 写入飞书</option>
                   </select>
-                  <small>飞书配置在设置抽屉中填写。</small>
+                  <small>选择飞书后，下方会展开飞书配置。</small>
                 </label>
               </div>
+
+              <section class="connection-box inline-connection-box">
+                <div class="section-head connection-title">
+                  <div>
+                    <p class="eyebrow">MCP / API</p>
+                    <h2>数据源连接</h2>
+                    <p class="section-copy">按上方选择的数据源填写凭证；Key 只随当前任务提交，不在历史记录中明文保存。</p>
+                  </div>
+                  <button type="button" class="secondary" id="testConnection">测试连接</button>
+                </div>
+
+                <div class="form-grid connection-grid provider-grid">
+                  <div class="provider-fields span-three" id="sorftimeFields">
+                    <label class="control setting-card">
+                      <span>Sorftime 连接方式</span>
+                      <select name="sorftime_mode" id="sorftimeMode">
+                        <option value="cli_account" selected>Sorftime CLI（Account-SK）</option>
+                        <option value="mcp_url">Sorftime MCP（URL + Token）</option>
+                      </select>
+                      <small>CLI 适合批量；MCP 适合多接口组合。</small>
+                    </label>
+                    <label class="control setting-card flex-two" id="cliAccountField">
+                      <span>Sorftime CLI Account-SK</span>
+                      <input name="sorftime_cli_account_sk" id="sorftimeCliAccountSk" type="password" autocomplete="off" placeholder="粘贴 Sorftime Account-SK" />
+                      <small>服务器调用固定 Amazon CLI 接口，不执行用户输入的系统命令。</small>
+                    </label>
+                    <label class="control setting-card flex-two" id="mcpUrlField" hidden>
+                      <span>Sorftime MCP URL</span>
+                      <input name="sorftime_mcp_url" id="sorftimeMcpUrl" autocomplete="off" value="https://mcp.sorftime.com/" />
+                      <small>默认使用 Sorftime MCP 地址。</small>
+                    </label>
+                    <label class="control setting-card" id="mcpTokenField" hidden>
+                      <span>Sorftime MCP Token</span>
+                      <input name="sorftime_mcp_token" id="sorftimeMcpToken" type="password" autocomplete="off" placeholder="粘贴 Token / Account-SK" />
+                      <small>仅发送给所选数据源。</small>
+                    </label>
+                  </div>
+
+                  <div class="provider-fields span-three" id="sellerSpriteFields" hidden>
+                    <div class="control setting-card flex-two fixed-endpoint-card">
+                      <span>卖家精灵 MCP 服务</span>
+                      <strong class="fixed-endpoint">https://mcp.sellersprite.com/mcp</strong>
+                      <small>官方 MCP URL 已内置，无需手动填写；后台使用固定请求头 <code>secret-key</code> 鉴权。</small>
+                    </div>
+                    <label class="control setting-card flex-two">
+                      <span>卖家精灵 MCP Key</span>
+                      <input name="sellersprite_mcp_token" id="sellerSpriteMcpToken" type="password" autocomplete="off" placeholder="粘贴卖家精灵 MCP Key" />
+                      <small>填写卖家精灵 MCP Key。连接后程序会按官方工具 Code 直接调用。</small>
+                    </label>
+                  </div>
+
+                  <div class="provider-fields span-three" id="sifFields" hidden>
+                    <label class="control setting-card flex-two">
+                      <span>SIF MCP URL</span>
+                      <input name="sif_mcp_url" id="sifMcpUrl" autocomplete="off" value="https://mcp.sif.com/mcp" />
+                      <small>使用 SIF MCP 服务地址。</small>
+                    </label>
+                    <label class="control setting-card flex-two">
+                      <span>SIF MCP Key</span>
+                      <input name="sif_mcp_token" id="sifMcpToken" type="password" autocomplete="off" placeholder="粘贴 SIF MCP Key" />
+                      <small>工具会读取 tools/list 并自动匹配 Amazon 数据接口。</small>
+                    </label>
+                  </div>
+
+                  <div class="provider-fields span-three" id="xiyouFields" hidden>
+                    <label class="control setting-card">
+                      <span>西柚洞察连接方式</span>
+                      <select name="xiyou_mode" id="xiyouMode">
+                        <option value="mcp_url" selected>西柚洞察 MCP（URL + Token）</option>
+                        <option value="api">西柚洞察 OpenAPI</option>
+                      </select>
+                      <small>MCP 为默认方式；OpenAPI 保留兼容。</small>
+                    </label>
+                    <label class="control setting-card flex-two" id="xiyouMcpUrlField">
+                      <span>西柚洞察 MCP URL</span>
+                      <input name="xiyou_mcp_url" id="xiyouMcpUrl" autocomplete="off" value="https://mcp.xydc.com/mcp" />
+                      <small>官方远程 MCP 地址，通常保持默认值。</small>
+                    </label>
+                    <label class="control setting-card flex-two" id="xiyouMcpTokenField">
+                      <span>西柚洞察 MCP Token</span>
+                      <input name="xiyou_mcp_token" id="xiyouMcpToken" type="password" autocomplete="off" placeholder="粘贴西柚洞察 MCP Token" />
+                      <small>使用 Authorization: Bearer 鉴权；不会写入普通任务文件。</small>
+                    </label>
+                    <label class="control setting-card flex-two" id="xiyouApiKeyField" hidden>
+                      <span>西柚洞察 API Key</span>
+                      <input name="xiyou_api_key" id="xiyouApiKey" type="password" autocomplete="off" placeholder="粘贴西柚洞察 OpenAPI Key" />
+                      <small>仅在选择 OpenAPI 时使用。</small>
+                    </label>
+                    <label class="control setting-card flex-two" id="xiyouApiUrlField" hidden>
+                      <span>西柚洞察 API Base URL</span>
+                      <input name="xiyou_api_url" id="xiyouApiUrl" autocomplete="off" value="https://openapi.xydc.com" />
+                      <small>通常保持默认值。</small>
+                    </label>
+                  </div>
+
+                  <div class="provider-fields span-three" id="customFields" hidden>
+                    <label class="control setting-card">
+                      <span>其他软件连接方式</span>
+                      <select name="custom_mode" id="customMode">
+                        <option value="mcp_url" selected>自定义 MCP</option>
+                        <option value="api">自定义 API</option>
+                      </select>
+                      <small>MCP 自动发现工具；API 按统一 POST 入参调用。</small>
+                    </label>
+                    <label class="control setting-card flex-two" id="customMcpUrlField">
+                      <span>其他软件 MCP URL</span>
+                      <input name="custom_mcp_url" id="customMcpUrl" autocomplete="off" placeholder="https://example.com/mcp" />
+                      <small>需为 Zeabur 可访问的公网 HTTPS 地址。</small>
+                    </label>
+                    <label class="control setting-card" id="customMcpTokenField">
+                      <span>MCP Token / Key</span>
+                      <input name="custom_mcp_token" id="customMcpToken" type="password" autocomplete="off" placeholder="可选或按服务要求填写" />
+                      <small>默认使用 Bearer 方式。</small>
+                    </label>
+                    <label class="control setting-card flex-two" id="customApiUrlField" hidden>
+                      <span>其他软件 API Endpoint</span>
+                      <input name="custom_api_url" id="customApiUrl" autocomplete="off" placeholder="https://api.example.com/keyword-data" />
+                      <small>工具会 POST：asin、keyword、marketplace。</small>
+                    </label>
+                    <label class="control setting-card" id="customApiKeyField" hidden>
+                      <span>API Key</span>
+                      <input name="custom_api_key" id="customApiKey" type="password" autocomplete="off" placeholder="粘贴 API Key" />
+                      <small>可留空，取决于接口要求。</small>
+                    </label>
+                    <label class="control setting-card" id="customApiHeaderField" hidden>
+                      <span>API Key Header</span>
+                      <input name="custom_api_key_header" id="customApiKeyHeader" autocomplete="off" value="Authorization" />
+                      <small>例如 Authorization、X-Api-Key。</small>
+                    </label>
+                  </div>
+                </div>
+                <div class="connection-footer">
+                  <span></span>
+                  <span id="connectionStatus" class="connection-status">填写连接信息后可直接测试或开始抓取</span>
+                </div>
+              </section>
+
+              <section class="config-block inline-config-block">
+                <div class="section-head output-title">
+                  <div>
+                    <p class="eyebrow">PRODUCT DATA</p>
+                    <h2>Keepamore 产品数据</h2>
+                  </div>
+                </div>
+                <label class="check-card setting-card auto-download-card">
+                  <input type="checkbox" name="keepa_enabled" id="keepaEnabled" checked />
+                  <span><strong>使用 Keepamore 补充产品指标</strong><small>到手价、Buy Box、运费、优惠券、Deal、月销量、父体月销估算、库存、BSR、评分、评价数来自 Keepamore；关键词排名仍由上方数据源抓取。</small></span>
+                </label>
+                <div class="form-grid feishu-grid keepa-grid" id="keepaFields">
+                  <label class="control setting-card">
+                    <span>Keepa API Key</span>
+                    <input name="keepa_api_key" id="keepaApiKey" type="password" autocomplete="off" placeholder="粘贴 Keepa API Key" />
+                    <small>Key 只随当前任务提交；任务日志和历史记录不会明文保存。</small>
+                  </label>
+                  <label class="control setting-card">
+                    <span>Keepamore API Base URL</span>
+                    <input name="keepa_api_url" id="keepaApiUrl" autocomplete="off" value="https://mcp.keepamore.com" />
+                    <small>通常保持默认值。</small>
+                  </label>
+                </div>
+              </section>
+
+              <section class="config-block inline-config-block">
+                <div class="section-head output-title">
+                  <div>
+                    <p class="eyebrow">FEISHU</p>
+                    <h2>飞书配置</h2>
+                  </div>
+                </div>
+                <div class="form-grid feishu-grid" id="feishuFields" hidden>
+                  <label class="control setting-card">
+                    <span>飞书 App ID</span>
+                    <input name="feishu_app_id" id="feishuAppId" autocomplete="off" placeholder="cli_xxxxxxxxxxxxxxxx" />
+                    <small>应用需开通 bitable:app、发布并审批，同时加入目标 Base 协作者。</small>
+                  </label>
+                  <label class="control setting-card">
+                    <span>飞书 App Secret</span>
+                    <input name="feishu_app_secret" id="feishuAppSecret" type="password" autocomplete="off" placeholder="粘贴 App Secret" />
+                    <small>用于当前抓取；开启定时后会加密保存在 Zeabur 持久化卷。</small>
+                  </label>
+                  <label class="control setting-card">
+                    <span>飞书 Base 链接</span>
+                    <input name="base_url" id="feishuBaseUrl" autocomplete="off" placeholder="https://xxx.feishu.cn/base/...?table=tbl..." />
+                    <small>建议粘贴 /base/ 开头的直接链接。</small>
+                  </label>
+                </div>
+              </section>
 
               <div class="schedule-mode-grid">
                 <div class="check-card setting-card schedule-card is-selected">
@@ -122,7 +308,6 @@
             <input type="hidden" name="remember_connection" value="false" />
             <div class="actions">
               <button type="submit" class="primary" id="runCapture">开始抓取</button>
-              <button type="button" class="secondary" id="openSettingsInline">配置连接</button>
             </div>
           </section>
 
@@ -164,8 +349,12 @@
             <div>
               <p class="eyebrow">DATA DASHBOARD</p>
               <h2>数据看板</h2>
+              <p class="section-copy">只显示当前浏览器身份下创建的抓取记录。外部新访客首次打开时看板为空。</p>
             </div>
-            <button type="button" class="secondary" id="refreshHistory">刷新结果</button>
+            <div class="dashboard-actions">
+              <button type="button" class="secondary" id="resetVisitor">重置访客身份</button>
+              <button type="button" class="secondary" id="refreshHistory">刷新结果</button>
+            </div>
           </div>
 
           <div class="dashboard-filters">
@@ -228,205 +417,6 @@
         </section>
       </section>
 
-      <aside class="settings-drawer" id="settingsDrawer" aria-hidden="true">
-        <div class="drawer-scrim" id="closeSettingsScrim"></div>
-        <section class="drawer-panel">
-          <div class="section-head drawer-head">
-            <div>
-              <p class="eyebrow">SETTINGS</p>
-              <h2>连接与输出配置</h2>
-            </div>
-            <button type="button" class="secondary" id="closeSettings">关闭</button>
-          </div>
-
-          <section class="connection-box">
-            <div class="section-head connection-title">
-              <div>
-                <p class="eyebrow">MCP / API</p>
-                <h2>数据源连接</h2>
-                <p class="section-copy">当前数据源由任务中心选择，这里只保留对应凭证。</p>
-              </div>
-              <button type="button" class="secondary" id="testConnection">测试连接</button>
-            </div>
-
-            <div class="form-grid connection-grid provider-grid">
-              <div class="provider-fields span-three" id="sorftimeFields">
-                <label class="control setting-card">
-                  <span>Sorftime 连接方式</span>
-                  <select name="sorftime_mode" id="sorftimeMode">
-                    <option value="cli_account" selected>Sorftime CLI（Account-SK）</option>
-                    <option value="mcp_url">Sorftime MCP（URL + Token）</option>
-                  </select>
-                  <small>CLI 适合批量；MCP 适合多接口组合。</small>
-                </label>
-                <label class="control setting-card flex-two" id="cliAccountField">
-                  <span>Sorftime CLI Account-SK</span>
-                  <input name="sorftime_cli_account_sk" id="sorftimeCliAccountSk" type="password" autocomplete="off" placeholder="粘贴 Sorftime Account-SK" />
-                  <small>服务器调用固定 Amazon CLI 接口，不执行用户输入的系统命令。</small>
-                </label>
-                <label class="control setting-card flex-two" id="mcpUrlField" hidden>
-                  <span>Sorftime MCP URL</span>
-                  <input name="sorftime_mcp_url" id="sorftimeMcpUrl" autocomplete="off" value="https://mcp.sorftime.com/" />
-                  <small>默认使用 Sorftime MCP 地址。</small>
-                </label>
-                <label class="control setting-card" id="mcpTokenField" hidden>
-                  <span>Sorftime MCP Token</span>
-                  <input name="sorftime_mcp_token" id="sorftimeMcpToken" type="password" autocomplete="off" placeholder="粘贴 Token / Account-SK" />
-                  <small>仅发送给所选数据源。</small>
-                </label>
-              </div>
-
-              <div class="provider-fields span-three" id="sellerSpriteFields" hidden>
-                <div class="control setting-card flex-two fixed-endpoint-card">
-                  <span>卖家精灵 MCP 服务</span>
-                  <strong class="fixed-endpoint">https://mcp.sellersprite.com/mcp</strong>
-                  <small>官方 MCP URL 已内置，无需手动填写；后台使用固定请求头 <code>secret-key</code> 鉴权。</small>
-                </div>
-                <label class="control setting-card flex-two">
-                  <span>卖家精灵 MCP Key</span>
-                  <input name="sellersprite_mcp_token" id="sellerSpriteMcpToken" type="password" autocomplete="off" placeholder="粘贴卖家精灵 MCP Key" />
-                  <small>填写卖家精灵 MCP Key。连接后程序会按官方工具 Code 直接调用。</small>
-                </label>
-              </div>
-
-              <div class="provider-fields span-three" id="sifFields" hidden>
-                <label class="control setting-card flex-two">
-                  <span>SIF MCP URL</span>
-                  <input name="sif_mcp_url" id="sifMcpUrl" autocomplete="off" value="https://mcp.sif.com/mcp" />
-                  <small>使用 SIF MCP 服务地址。</small>
-                </label>
-                <label class="control setting-card flex-two">
-                  <span>SIF MCP Key</span>
-                  <input name="sif_mcp_token" id="sifMcpToken" type="password" autocomplete="off" placeholder="粘贴 SIF MCP Key" />
-                  <small>工具会读取 tools/list 并自动匹配 Amazon 数据接口。</small>
-                </label>
-              </div>
-
-              <div class="provider-fields span-three" id="xiyouFields" hidden>
-                <label class="control setting-card">
-                  <span>西柚洞察连接方式</span>
-                  <select name="xiyou_mode" id="xiyouMode">
-                    <option value="mcp_url" selected>西柚洞察 MCP（URL + Token）</option>
-                    <option value="api">西柚洞察 OpenAPI</option>
-                  </select>
-                  <small>MCP 为默认方式；OpenAPI 保留兼容。</small>
-                </label>
-                <label class="control setting-card flex-two" id="xiyouMcpUrlField">
-                  <span>西柚洞察 MCP URL</span>
-                  <input name="xiyou_mcp_url" id="xiyouMcpUrl" autocomplete="off" value="https://mcp.xydc.com/mcp" />
-                  <small>官方远程 MCP 地址，通常保持默认值。</small>
-                </label>
-                <label class="control setting-card flex-two" id="xiyouMcpTokenField">
-                  <span>西柚洞察 MCP Token</span>
-                  <input name="xiyou_mcp_token" id="xiyouMcpToken" type="password" autocomplete="off" placeholder="粘贴西柚洞察 MCP Token" />
-                  <small>使用 Authorization: Bearer 鉴权；不会写入普通任务文件。</small>
-                </label>
-                <label class="control setting-card flex-two" id="xiyouApiKeyField" hidden>
-                  <span>西柚洞察 API Key</span>
-                  <input name="xiyou_api_key" id="xiyouApiKey" type="password" autocomplete="off" placeholder="粘贴西柚洞察 OpenAPI Key" />
-                  <small>仅在选择 OpenAPI 时使用。</small>
-                </label>
-                <label class="control setting-card flex-two" id="xiyouApiUrlField" hidden>
-                  <span>西柚洞察 API Base URL</span>
-                  <input name="xiyou_api_url" id="xiyouApiUrl" autocomplete="off" value="https://openapi.xydc.com" />
-                  <small>通常保持默认值。</small>
-                </label>
-              </div>
-
-              <div class="provider-fields span-three" id="customFields" hidden>
-                <label class="control setting-card">
-                  <span>其他软件连接方式</span>
-                  <select name="custom_mode" id="customMode">
-                    <option value="mcp_url" selected>自定义 MCP</option>
-                    <option value="api">自定义 API</option>
-                  </select>
-                  <small>MCP 自动发现工具；API 按统一 POST 入参调用。</small>
-                </label>
-                <label class="control setting-card flex-two" id="customMcpUrlField">
-                  <span>其他软件 MCP URL</span>
-                  <input name="custom_mcp_url" id="customMcpUrl" autocomplete="off" placeholder="https://example.com/mcp" />
-                  <small>需为 Zeabur 可访问的公网 HTTPS 地址。</small>
-                </label>
-                <label class="control setting-card" id="customMcpTokenField">
-                  <span>MCP Token / Key</span>
-                  <input name="custom_mcp_token" id="customMcpToken" type="password" autocomplete="off" placeholder="可选或按服务要求填写" />
-                  <small>默认使用 Bearer 方式。</small>
-                </label>
-                <label class="control setting-card flex-two" id="customApiUrlField" hidden>
-                  <span>其他软件 API Endpoint</span>
-                  <input name="custom_api_url" id="customApiUrl" autocomplete="off" placeholder="https://api.example.com/keyword-data" />
-                  <small>工具会 POST：asin、keyword、marketplace。</small>
-                </label>
-                <label class="control setting-card" id="customApiKeyField" hidden>
-                  <span>API Key</span>
-                  <input name="custom_api_key" id="customApiKey" type="password" autocomplete="off" placeholder="粘贴 API Key" />
-                  <small>可留空，取决于接口要求。</small>
-                </label>
-                <label class="control setting-card" id="customApiHeaderField" hidden>
-                  <span>API Key Header</span>
-                  <input name="custom_api_key_header" id="customApiKeyHeader" autocomplete="off" value="Authorization" />
-                  <small>例如 Authorization、X-Api-Key。</small>
-                </label>
-              </div>
-            </div>
-            <div class="connection-footer">
-              <span></span>
-              <span id="connectionStatus" class="connection-status">填写连接信息后可直接测试或开始抓取</span>
-            </div>
-          </section>
-
-          <section class="drawer-block">
-            <div class="section-head output-title">
-              <div>
-                <p class="eyebrow">PRODUCT DATA</p>
-                <h2>Keepamore 产品数据</h2>
-              </div>
-            </div>
-            <label class="check-card setting-card auto-download-card">
-              <input type="checkbox" name="keepa_enabled" id="keepaEnabled" checked />
-              <span><strong>使用 Keepamore 补充产品指标</strong><small>到手价、Buy Box、运费、优惠券、Deal、月销量、父体月销估算、库存、BSR、评分、评价数来自 Keepamore；关键词排名仍由上方数据源抓取。</small></span>
-            </label>
-            <div class="form-grid feishu-grid keepa-grid" id="keepaFields">
-              <label class="control setting-card">
-                <span>Keepa API Key</span>
-                <input name="keepa_api_key" id="keepaApiKey" type="password" autocomplete="off" placeholder="粘贴 Keepa API Key" />
-                <small>Key 只随当前任务提交；任务日志和历史记录不会明文保存。</small>
-              </label>
-              <label class="control setting-card">
-                <span>Keepamore API Base URL</span>
-                <input name="keepa_api_url" id="keepaApiUrl" autocomplete="off" value="https://mcp.keepamore.com" />
-                <small>通常保持默认值。</small>
-              </label>
-            </div>
-          </section>
-
-          <section class="drawer-block">
-            <div class="section-head output-title">
-              <div>
-                <p class="eyebrow">FEISHU</p>
-                <h2>飞书配置</h2>
-              </div>
-            </div>
-            <div class="form-grid feishu-grid" id="feishuFields" hidden>
-              <label class="control setting-card">
-                <span>飞书 App ID</span>
-                <input name="feishu_app_id" id="feishuAppId" autocomplete="off" placeholder="cli_xxxxxxxxxxxxxxxx" />
-                <small>应用需开通 bitable:app、发布并审批，同时加入目标 Base 协作者。</small>
-              </label>
-              <label class="control setting-card">
-                <span>飞书 App Secret</span>
-                <input name="feishu_app_secret" id="feishuAppSecret" type="password" autocomplete="off" placeholder="粘贴 App Secret" />
-                <small>用于当前抓取；开启定时后会加密保存在 Zeabur 持久化卷。</small>
-              </label>
-              <label class="control setting-card">
-                <span>飞书 Base 链接</span>
-                <input name="base_url" id="feishuBaseUrl" autocomplete="off" placeholder="https://xxx.feishu.cn/base/...?...table=tbl..." />
-                <small>建议粘贴 /base/ 开头的直接链接。</small>
-              </label>
-            </div>
-          </section>
-        </section>
-      </aside>
     </form>
   </main>
   <div id="toast" class="toast"></div>

@@ -232,14 +232,9 @@
     $("dashboardTab").classList.toggle("active", tabName === "dashboard");
   }
 
-  function openSettingsDrawer() {
-    $("settingsDrawer").classList.add("open");
-    $("settingsDrawer").setAttribute("aria-hidden", "false");
-  }
-
-  function closeSettingsDrawer() {
-    $("settingsDrawer").classList.remove("open");
-    $("settingsDrawer").setAttribute("aria-hidden", "true");
+  function resetVisitorIdentity() {
+    localStorage.removeItem("keywordTrackerOwnerId");
+    window.location.href = `${window.location.pathname}?v=visitor-reset-${Date.now()}`;
   }
 
   function toNumber(value) {
@@ -549,13 +544,13 @@
   async function pollJob(jobId) {
     window.clearTimeout(jobTimer);
     try {
-      const payload = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
+      const payload = await api(`/api/jobs/${encodeURIComponent(jobId)}?owner_id=${encodeURIComponent(ownerId)}`);
       const job = payload.job;
       setProgress(job);
       if (["completed", "completed_with_warning"].includes(job.status)) {
         runButton.disabled = false;
         runButton.textContent = "开始抓取";
-        const results = await api(`/api/jobs/${encodeURIComponent(jobId)}/results`);
+        const results = await api(`/api/jobs/${encodeURIComponent(jobId)}/results?owner_id=${encodeURIComponent(ownerId)}`);
         setHistoryRecords(results.records || []);
         if (job.auto_download && job.excel) downloadFile(job.excel);
         if (job.lark && !job.lark.ok) {
@@ -605,10 +600,6 @@
   });
 
   $("testConnection").addEventListener("click", testConnection);
-  $("openSettings").addEventListener("click", openSettingsDrawer);
-  $("openSettingsInline").addEventListener("click", openSettingsDrawer);
-  $("closeSettings").addEventListener("click", closeSettingsDrawer);
-  $("closeSettingsScrim").addEventListener("click", closeSettingsDrawer);
   document.querySelectorAll(".tab-button").forEach(button => {
     button.addEventListener("click", () => setActiveTab(button.dataset.tab));
   });
@@ -620,6 +611,7 @@
   $("keepaEnabled").addEventListener("change", showKeepaFields);
   $("dailyEnabled").addEventListener("change", () => { dailyControlTouched = true; });
   $("refreshHistory").addEventListener("click", () => loadHistory(true));
+  $("resetVisitor").addEventListener("click", resetVisitorIdentity);
   ["dateFrom", "dateTo", "bucketMode", "filterAsin", "filterKeyword", "filterMarketplace", "filterSource"].forEach(id => {
     $(id).addEventListener("change", renderDashboard);
   });
