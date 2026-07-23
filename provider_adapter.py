@@ -215,7 +215,7 @@ class BaseApiClient:
         request = urllib.request.Request(url, data=body, headers=self.headers(), method=method.upper())
         started = time.perf_counter()
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with urllib.request.urlopen(request, timeout=45) as response:
                 text = response.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:800]
@@ -1461,7 +1461,7 @@ class KeepaApiClient(BaseApiClient):
         request = urllib.request.Request(url, headers=self.headers(), method="GET")
         started = time.perf_counter()
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with urllib.request.urlopen(request, timeout=45) as response:
                 text = self._decode_body(response.read(), response.headers.get("Content-Encoding", ""))
         except urllib.error.HTTPError as exc:
             detail = self._decode_body(exc.read(), exc.headers.get("Content-Encoding", ""))[:800]

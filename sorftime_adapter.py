@@ -508,7 +508,7 @@ class SorftimeMcpClient:
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(request, timeout=120) as response:
+                with urllib.request.urlopen(request, timeout=45) as response:
                     session_id = response.headers.get("Mcp-Session-Id", "")
                     if session_id:
                         self._session_id = session_id

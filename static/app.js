@@ -8,7 +8,6 @@
   const ownerId = getOwnerId();
   let jobTimer = null;
   let dailyControlTouched = false;
-  let fieldMapping = null;
   let allHistoryRecords = [];
 
   const tableFields = [
@@ -68,49 +67,6 @@
 
   function selectedProviderLabel() {
     return providerLabels[selectedProvider()] || "其他软件";
-  }
-
-  function selectedSourceKey() {
-    const provider = selectedProvider();
-    if (provider === "sorftime") return $("sorftimeMode").value === "mcp_url" ? "sorftime_mcp" : "sorftime_cli";
-    if (provider === "sellersprite") return "sellersprite_mcp";
-    if (provider === "sif") return "sif_mcp";
-    if (provider === "xiyou") return $("xiyouMode").value === "api" ? "xiyou_api" : "xiyou_mcp";
-    return $("customMode").value === "api" ? "custom_api" : "custom_mcp";
-  }
-
-  function renderFieldMapping() {
-    if (!fieldMapping || !Array.isArray(fieldMapping.fields)) return;
-    const sourceKey = selectedSourceKey();
-    const sourceLabel = (fieldMapping.source_labels || {})[sourceKey] || selectedProviderLabel();
-    const items = fieldMapping.fields.map(field => {
-      const mapping = (field.sources || {})[sourceKey] || (field.sources || {}).default || { tool: "等待接口匹配", status: "dynamic" };
-      return { ...field, mapping };
-    });
-    const full = items.filter(item => item.mapping.status === "full").length;
-    const conditional = items.filter(item => item.mapping.status === "conditional").length;
-    const dynamic = items.filter(item => item.mapping.status === "dynamic").length;
-    $("fieldCount").textContent = `${items.length} 个数据字段`;
-    $("fieldMatchTitle").textContent = `${sourceLabel} 字段匹配`;
-    $("fieldMatchNote").textContent = `依据 ${fieldMapping.source_file || "字段目录表"} 自动匹配；流量占比统一按百分比保留 2 位小数。`;
-    $("fieldCoverageBadge").textContent = `直接 ${full} · 条件 ${conditional} · 动态 ${dynamic}`;
-    $("fieldMatchGrid").innerHTML = items.map(item => {
-      const status = item.mapping.status || "dynamic";
-      const statusText = status === "full" ? "直接" : (status === "conditional" ? "条件" : "动态");
-      return `<div class="field-match-item match-${escapeHtml(status)}"><strong>${escapeHtml(item.label)} · ${statusText}</strong><small>${escapeHtml(item.mapping.tool || "")}</small></div>`;
-    }).join("");
-  }
-
-  async function loadFieldMapping() {
-    try {
-      const response = await fetch("/static/field-mapping.json", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      fieldMapping = await response.json();
-      renderFieldMapping();
-    } catch (error) {
-      $("fieldMatchNote").textContent = `字段映射表读取失败：${error.message}`;
-      $("fieldCoverageBadge").textContent = "读取失败";
-    }
   }
 
   function showSorftimeModeFields() {
@@ -177,7 +133,6 @@
     if (provider === "xiyou") detail = $("xiyouMode").value === "api" ? "填写西柚洞察 OpenAPI Key" : "填写西柚洞察 MCP URL 和 Token";
     if (provider === "custom") detail = $("customMode").value === "api" ? "填写其他软件 API Endpoint" : "填写其他软件 MCP URL";
     setConnectionState("disconnected", detail);
-    renderFieldMapping();
   }
 
   function showOutputFields() {
@@ -614,9 +569,8 @@
       }
       jobTimer = window.setTimeout(() => pollJob(jobId), 900);
     } catch (error) {
-      runButton.disabled = false;
-      runButton.textContent = "开始抓取并导出";
-      toast(error.message, true);
+      $("progressSub").textContent = `状态刷新失败，正在自动重试：${error.message}`;
+      jobTimer = window.setTimeout(() => pollJob(jobId), 1800);
     }
   }
 
@@ -669,7 +623,7 @@
     showConnectionFields();
     showOutputFields();
     showKeepaFields();
-    await Promise.all([loadFieldMapping(), loadHistory(false), loadDailyStatus()]);
+    await Promise.all([loadHistory(false), loadDailyStatus()]);
     window.setInterval(loadDailyStatus, 60000);
   }
 

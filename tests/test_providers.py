@@ -359,8 +359,11 @@ class ProviderTests(unittest.TestCase):
         self.assertIn("卖家精灵 MCP Key", html)
         self.assertIn("西柚洞察 MCP", html)
         self.assertIn("https://mcp.xydc.com/mcp", html)
-        self.assertIn("STEP 1 · 监控字段", html)
-        self.assertIn("小类排名", html)
+        self.assertNotIn("STEP 1 · 监控字段", html)
+        self.assertNotIn("先固定需要的数据", html)
+        self.assertNotIn("字段匹配", html)
+        self.assertIn('id="asinsText"', html)
+        self.assertIn('id="keywordsText"', html)
         self.assertIn("关键词1", html)
         self.assertNotIn("真实业务关键词", html)
 
