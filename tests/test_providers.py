@@ -352,6 +352,16 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(organic_time, "2026-07-21")
         self.assertEqual(ad_time, "2026-07-21")
 
+        organic, ad, _, _ = XiyouMcpClient._rank_positions({
+            "data": [
+                {"date": "2026-07-22", "position": "or"},
+                {"date": "2026-07-22", "position": "sp"},
+                {"date": "2026-07-22", "rankType": "or", "rank": 9},
+            ]
+        }, "鍏抽敭璇?")
+        self.assertEqual(organic, 9)
+        self.assertEqual(ad, "")
+
     def test_xiyou_defaults_to_mcp_and_token_is_redacted(self):
         connection = app.normalize_connection({"provider": "xiyou", "mcp_token": "private-token"})
         self.assertEqual(connection["mode"], "mcp_url")

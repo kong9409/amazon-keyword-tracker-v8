@@ -244,6 +244,14 @@
     return Number.isFinite(number) ? number : null;
   }
 
+  function normalizeRankPosition(value) {
+    if (value === null || value === undefined || value === "") return "";
+    const text = String(value).trim();
+    if (text.includes(">") && /\d/.test(text)) return text;
+    const number = toNumber(text);
+    return number !== null && number > 0 ? number : "";
+  }
+
   function average(values) {
     const numbers = values.map(toNumber).filter(value => value !== null);
     if (!numbers.length) return null;
@@ -428,7 +436,11 @@
   }
 
   function setHistoryRecords(records) {
-    allHistoryRecords = Array.isArray(records) ? records : [];
+    allHistoryRecords = Array.isArray(records) ? records.map(record => ({
+      ...record,
+      organic_position: normalizeRankPosition(record.organic_position),
+      ad_position: normalizeRankPosition(record.ad_position)
+    })) : [];
     renderDashboard();
   }
 

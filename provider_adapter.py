@@ -138,12 +138,14 @@ def _finish_result(
                 errors.append(f"{key.removesuffix('_error')}：{value}")
         if errors:
             message += "；" + "；".join(errors[:4])
+    organic_clean = normalize_position(organic_position)
+    ad_clean = normalize_position(ad_position)
     return {
         **_blank_result(),
-        "keyword_rank": first_non_empty(organic_position, ad_position),
-        "organic_position": normalize_position(organic_position),
+        "keyword_rank": first_non_empty(organic_clean, ad_clean),
+        "organic_position": organic_clean,
         "organic_time": organic_time,
-        "ad_position": normalize_position(ad_position),
+        "ad_position": ad_clean,
         "ad_time": ad_time,
         "traffic_share": normalize_percent(traffic_share),
         "aba_rank": normalize_number(aba_rank),
@@ -180,8 +182,16 @@ def _percent_value(value: Any) -> Any:
 
 def _position_value(value: Any) -> Any:
     if isinstance(value, dict):
-        return first_non_empty(value.get("position"), value.get("totalRank"), value.get("rank"), value.get("index"))
+        return first_non_empty(value.get("totalRank"), value.get("rank"), value.get("positionRank"), value.get("value"), value.get("index"), value.get("position"))
     return value
+
+
+def _first_position(*values: Any) -> Any:
+    for value in values:
+        position = normalize_position(_position_value(value))
+        if position not in EMPTY:
+            return position
+    return ""
 
 
 class BaseApiClient:
@@ -493,8 +503,8 @@ class XiyouApiClient(BaseApiClient):
             provider=self.provider_name, asin=asin, site=site, raw=raw,
             traffic_share=_percent_value(traffic_share), aba_rank=aba_rank,
             search_volume=find_value(keyword_row, SEARCH_VOLUME_KEYS | {"weeklySearchVolume"}),
-            organic_position=first_non_empty(organic, find_value(row, ORGANIC_POSITION_KEYS)),
-            ad_position=first_non_empty(ad, find_value(row, AD_POSITION_KEYS)),
+            organic_position=_first_position(organic, find_value(row, ORGANIC_POSITION_KEYS)),
+            ad_position=_first_position(ad, find_value(row, AD_POSITION_KEYS)),
             price=first_non_empty(product.get("price", ""), find_value(detail, PRICE_KEYS)),
             coupon_value=product.get("coupon_value", ""), deal_price=product.get("deal_price", ""),
             prime_price=product.get("prime_discount_price", ""),
@@ -744,8 +754,8 @@ class GenericMcpClient(SorftimeMcpClient):
             traffic_share=find_value(traffic_row, TRAFFIC_SHARE_KEYS),
             aba_rank=find_value(keyword_row, ABA_RANK_KEYS),
             search_volume=find_value(keyword_row, SEARCH_VOLUME_KEYS),
-            organic_position=first_non_empty(find_value(traffic_row, ORGANIC_POSITION_KEYS), find_value(data["ranking"], ORGANIC_POSITION_KEYS | RANK_KEYS)),
-            ad_position=find_value(traffic_row, AD_POSITION_KEYS),
+            organic_position=_first_position(find_value(traffic_row, ORGANIC_POSITION_KEYS), find_value(data["ranking"], ORGANIC_POSITION_KEYS | RANK_KEYS)),
+            ad_position=_first_position(find_value(traffic_row, AD_POSITION_KEYS)),
             price=product.get("price", ""), coupon_value=product.get("coupon_value", ""),
             deal_price=product.get("deal_price", ""), prime_price=product.get("prime_discount_price", ""),
             sales=first_non_empty(product.get("estimated_sales", ""), find_value(data["sales"], SALES_KEYS | VALUE_KEYS)),
@@ -1272,8 +1282,8 @@ class XiyouMcpClient(GenericMcpClient):
         organic = ad = organic_time = ad_time = ""
         for row in candidates:
             row_date = find_value(row, {"date", "day", "time", "recordDate", "statDate"})
-            direct_org = find_value(row, ORGANIC_POSITION_KEYS)
-            direct_ad = find_value(row, AD_POSITION_KEYS)
+            direct_org = _first_position(find_value(row, ORGANIC_POSITION_KEYS))
+            direct_ad = _first_position(find_value(row, AD_POSITION_KEYS))
             if direct_org not in EMPTY and organic in EMPTY:
                 organic, organic_time = direct_org, row_date
             if direct_ad not in EMPTY and ad in EMPTY:
@@ -1288,10 +1298,10 @@ class XiyouMcpClient(GenericMcpClient):
                     item.get("position"), item.get("positionType"), item.get("rankType"),
                     item.get("type"), item.get("placement"), item.get("source"),
                 )).strip().lower()
-                value = first_non_empty(
+                value = normalize_position(first_non_empty(
                     item.get("totalRank"), item.get("rank"), item.get("positionRank"),
                     item.get("value"), item.get("index"),
-                )
+                ))
                 if value in EMPTY:
                     continue
                 if kind in {"0", "or", "organic", "natural", "自然", "自然位"} and organic in EMPTY:
@@ -1329,16 +1339,16 @@ class XiyouMcpClient(GenericMcpClient):
                 raw["ranking_ad"] = ad_ranking
                 _, rank_ad, _, rank_ad_time = self._rank_positions(ad_ranking, keyword)
                 if rank_ad in EMPTY:
-                    rank_ad = find_value(ad_ranking, AD_POSITION_KEYS | POSITION_KEYS | RANK_KEYS)
+                    rank_ad = _first_position(find_value(ad_ranking, AD_POSITION_KEYS | POSITION_KEYS | RANK_KEYS))
             except Exception as exc:
                 raw["ranking_ad_error"] = str(exc)
-        organic = first_non_empty(
+        organic = _first_position(
             positions[0],
             rank_org,
             find_value(traffic_row, ORGANIC_POSITION_KEYS),
             find_value(data["ranking"], ORGANIC_POSITION_KEYS | POSITION_KEYS | RANK_KEYS),
         )
-        ad = first_non_empty(rank_ad, positions[1], find_value(traffic_row, AD_POSITION_KEYS), find_value(data["ranking"], AD_POSITION_KEYS))
+        ad = _first_position(rank_ad, positions[1], find_value(traffic_row, AD_POSITION_KEYS), find_value(data["ranking"], AD_POSITION_KEYS))
         bsr_main, bsr_small = XiyouApiClient._latest_bsr_ranks(data["bsr"])
         product_rank = first_non_empty(
             product.get("product_rank", ""),

@@ -1589,8 +1589,9 @@ def normalize_position(value: Any) -> Any:
         return ""
     text = str(value).strip()
     if ">" in text:
-        return text
-    return normalize_number(value)
+        return text if re.search(r"\d", text) else ""
+    number = normalize_number(value)
+    return number if isinstance(number, (int, float)) else ""
 
 
 def normalize_yes_no(value: Any, fallback: bool = False) -> str:
