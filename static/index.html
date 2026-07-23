@@ -43,13 +43,13 @@
                   <h2>先固定需要的数据，再选择软件</h2>
                   <p class="section-copy">以下字段已前置为统一输出结构。切换 Sorftime、卖家精灵、SIF、西柚洞察或其他 MCP/API 时，工具会依据《各插件 MCP 目录表》自动匹配对应接口。</p>
                 </div>
-                <div class="field-count" id="fieldCount">28 个数据字段</div>
+                <div class="field-count" id="fieldCount">26 个数据字段</div>
               </div>
               <div class="required-field-grid" id="requiredFieldGrid">
                 <span>日期</span><span>ASIN</span><span>关键词</span><span>流量占比</span><span>ABA热度</span><span>搜索量</span>
-                <span>自然位</span><span>广告位</span><span>价格</span><span>到手价+运费</span><span>Buy Box价</span><span>运费</span>
+                <span>自然位</span><span>广告位</span><span>到手价+运费</span><span>Buy Box价</span><span>运费</span>
                 <span>优惠券</span><span>划线价</span><span>Deal</span><span>秒杀价</span><span>Prime价</span><span>月销量</span>
-                <span>Keepa父体月销估算</span><span>库存</span><span>Code促销</span><span>企业价</span><span>企业促销</span><span>大类排名</span>
+                <span>Keepa父体月销估算</span><span>库存</span><span>Code促销</span><span>企业价</span><span>大类排名</span>
                 <span>小类排名</span><span>评分</span><span>评价数</span><span>链接</span>
               </div>
               <div class="field-match-panel">
@@ -204,16 +204,19 @@
           </div>
 
           <div class="dashboard-metrics">
-            <article><span>价格</span><strong id="metricPrice">-</strong></article>
             <article><span>到手价+运费</span><strong id="metricLandedPrice">-</strong></article>
             <article><span>Buy Box价</span><strong id="metricBuyBoxPrice">-</strong></article>
             <article><span>运费</span><strong id="metricShipping">-</strong></article>
             <article><span>优惠券</span><strong id="metricCoupon">-</strong></article>
             <article><span>划线价</span><strong id="metricListPrice">-</strong></article>
             <article><span>Deal</span><strong id="metricDeal">-</strong></article>
+            <article><span>秒杀价</span><strong id="metricDealPrice">-</strong></article>
+            <article><span>Prime价</span><strong id="metricPrimePrice">-</strong></article>
             <article><span>月销量</span><strong id="metricSales">-</strong></article>
             <article><span>Keepa父体月销估算</span><strong id="metricParentSales">-</strong></article>
             <article><span>库存</span><strong id="metricStock">-</strong></article>
+            <article><span>Code促销</span><strong id="metricCodePromotion">-</strong></article>
+            <article><span>企业价</span><strong id="metricBusinessPrice">-</strong></article>
             <article><span>大类排名</span><strong id="metricRank">-</strong></article>
             <article><span>小类排名</span><strong id="metricSmallRank">-</strong></article>
             <article><span>评分</span><strong id="metricRating">-</strong></article>
@@ -226,7 +229,7 @@
               <div class="chart-box" id="rankChart"></div>
             </article>
             <article class="chart-panel">
-              <div class="chart-title"><h3>价格 / 销量 / 排名趋势</h3><span id="metricChartSummary">暂无数据</span></div>
+              <div class="chart-title"><h3>到手价 / 销量 / 排名趋势</h3><span id="metricChartSummary">暂无数据</span></div>
               <div class="chart-box" id="metricChart"></div>
             </article>
           </div>
@@ -239,12 +242,12 @@
             <table>
               <thead><tr>
                 <th>日期</th><th>ASIN</th><th>关键词</th><th>流量占比</th><th>ABA热度</th><th>搜索量</th>
-                <th>自然位</th><th>广告位</th><th>价格</th><th>到手价+运费</th><th>Buy Box价</th><th>运费</th>
+                <th>自然位</th><th>广告位</th><th>到手价+运费</th><th>Buy Box价</th><th>运费</th>
                 <th>优惠券</th><th>划线价</th><th>Deal</th><th>秒杀价</th><th>Prime价</th>
-                <th>月销量</th><th>Keepa父体月销估算</th><th>库存</th><th>Code促销</th><th>企业价</th><th>企业促销</th>
+                <th>月销量</th><th>Keepa父体月销估算</th><th>库存</th><th>Code促销</th><th>企业价</th>
                 <th>大类排名</th><th>小类排名</th><th>评分</th><th>评价数</th><th>链接</th><th>状态</th><th>备注</th>
               </tr></thead>
-              <tbody id="historyBody"><tr><td colspan="30" class="empty">暂无结果</td></tr></tbody>
+              <tbody id="historyBody"><tr><td colspan="28" class="empty">暂无结果</td></tr></tbody>
             </table>
           </div>
         </section>

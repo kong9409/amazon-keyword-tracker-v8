@@ -64,7 +64,6 @@ FIELD_COLUMNS: list[tuple[str, str]] = [
     ("search_volume", "搜索量"),
     ("organic_position", "自然位"),
     ("ad_position", "广告位"),
-    ("price", "价格"),
     ("landed_price", "到手价+运费"),
     ("buy_box_price", "Buy Box价"),
     ("shipping_fee", "运费"),
@@ -78,7 +77,6 @@ FIELD_COLUMNS: list[tuple[str, str]] = [
     ("stock", "库存"),
     ("code_promotion", "Code促销"),
     ("business_price", "企业价"),
-    ("business_discount", "企业促销"),
     ("product_rank", "大类排名"),
     ("small_category_rank", "小类排名"),
     ("rating", "评分"),
@@ -914,11 +912,11 @@ def save_daily_job(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 PRODUCT_ENRICH_FIELDS = [
-    "price", "landed_price", "buy_box_price", "shipping_fee",
+    "landed_price", "buy_box_price", "shipping_fee",
     "coupon_type", "coupon_value", "list_price", "deal_label",
     "deal_status", "deal_price", "prime_discount_price",
     "estimated_sales", "parent_estimated_sales", "stock",
-    "code_promotion", "business_price", "business_discount", "product_rank",
+    "code_promotion", "business_price", "product_rank",
     "small_category_rank", "rating", "review_count", "product_url",
 ]
 
@@ -963,11 +961,11 @@ def run_capture_records(payload: dict[str, Any], progress: Any | None = None):
                 except Exception as exc:
                     result = {key: "" for key in [
                         "keyword_rank", "organic_position", "organic_time", "ad_position", "ad_time",
-                        "traffic_share", "aba_rank", "search_volume", "price", "landed_price",
+                        "traffic_share", "aba_rank", "search_volume", "landed_price",
                         "buy_box_price", "shipping_fee", "coupon_type", "coupon_value",
                         "list_price", "deal_label", "deal_status", "deal_price",
                         "prime_discount_price", "estimated_sales", "parent_estimated_sales",
-                        "stock", "code_promotion", "business_price", "business_discount",
+                        "stock", "code_promotion", "business_price",
                         "product_rank", "small_category_rank", "rating", "review_count", "product_url",
                     ]}
                     result.update({"status": "failed", "message": str(exc), "raw": {}})

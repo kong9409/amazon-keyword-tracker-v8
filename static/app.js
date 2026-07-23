@@ -13,10 +13,10 @@
 
   const tableFields = [
     "date", "asin", "keyword", "traffic_share", "aba_rank", "search_volume",
-    "organic_position", "ad_position", "price", "landed_price", "buy_box_price",
+    "organic_position", "ad_position", "landed_price", "buy_box_price",
     "shipping_fee", "coupon_value", "list_price", "deal_label", "deal_price",
     "prime_discount_price", "estimated_sales", "parent_estimated_sales", "stock",
-    "code_promotion", "business_price", "business_discount", "product_rank", "small_category_rank", "rating",
+    "code_promotion", "business_price", "product_rank", "small_category_rank", "rating",
     "review_count", "product_url", "status", "message"
   ];
 
@@ -443,16 +443,19 @@
     updateDashboardOptions(allHistoryRecords);
     const records = filteredHistory();
     $("dashboardCount").textContent = `${records.length} 条`;
-    $("metricPrice").textContent = formatMetric(average(records.map(record => record.price)), 2, "¥");
     $("metricLandedPrice").textContent = formatMetric(average(records.map(record => record.landed_price)), 2, "¥");
     $("metricBuyBoxPrice").textContent = formatMetric(average(records.map(record => record.buy_box_price)), 2, "¥");
     $("metricShipping").textContent = formatMetric(average(records.map(record => record.shipping_fee)), 2, "¥");
     $("metricCoupon").textContent = latestValue(records, "coupon_value") || "-";
     $("metricListPrice").textContent = formatMetric(average(records.map(record => record.list_price)), 2, "¥");
     $("metricDeal").textContent = latestValue(records, "deal_label") || formatMetric(average(records.map(record => record.deal_price)), 2, "¥");
+    $("metricDealPrice").textContent = formatMetric(average(records.map(record => record.deal_price)), 2, "¥");
+    $("metricPrimePrice").textContent = formatMetric(average(records.map(record => record.prime_discount_price)), 2, "¥");
     $("metricSales").textContent = formatMetric(sum(records.map(record => record.estimated_sales)), 0);
     $("metricParentSales").textContent = formatMetric(average(records.map(record => record.parent_estimated_sales)), 0);
     $("metricStock").textContent = formatMetric(toNumber(latestValue(records, "stock")), 0);
+    $("metricCodePromotion").textContent = latestValue(records, "code_promotion") || "-";
+    $("metricBusinessPrice").textContent = formatMetric(average(records.map(record => record.business_price)), 2, "¥");
     $("metricRank").textContent = formatMetric(bestRank(records.map(record => record.product_rank)), 0);
     $("metricSmallRank").textContent = formatMetric(bestRank(records.map(record => record.small_category_rank)), 0);
     $("metricRating").textContent = formatMetric(average(records.map(record => record.rating)), 1);
@@ -509,7 +512,7 @@
 
   function renderRows(records) {
     if (!records.length) {
-      historyBody.innerHTML = '<tr><td colspan="30" class="empty">暂无结果</td></tr>';
+      historyBody.innerHTML = '<tr><td colspan="28" class="empty">暂无结果</td></tr>';
       return;
     }
     historyBody.innerHTML = records.map(record => {
