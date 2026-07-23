@@ -1441,10 +1441,18 @@ class KeepaApiClient(BaseApiClient):
     CURRENT_BUY_BOX = 18
 
     def __init__(self, api_key: str, base_url: str = "https://mcp.keepamore.com") -> None:
+        api_key = self._normalize_api_key(api_key)
         if not api_key.strip():
             raise ValueError("请填写 Keepamore API Key")
         super().__init__(base_url or "https://mcp.keepamore.com", api_key)
         self._product_cache: dict[tuple[str, str], dict[str, Any]] = {}
+
+    @staticmethod
+    def _normalize_api_key(api_key: str) -> str:
+        value = str(api_key or "").strip()
+        if value.startswith("km_") and len(value) == 35:
+            return f"km{value[3:]}"
+        return value
 
     def headers(self) -> dict[str, str]:
         return {"Accept": "application/json", "X-API-Key": self.api_key}
