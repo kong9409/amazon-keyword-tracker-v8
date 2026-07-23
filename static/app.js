@@ -90,7 +90,7 @@
     const full = items.filter(item => item.mapping.status === "full").length;
     const conditional = items.filter(item => item.mapping.status === "conditional").length;
     const dynamic = items.filter(item => item.mapping.status === "dynamic").length;
-    $("fieldCount").textContent = `${items.length} 个字段`;
+    $("fieldCount").textContent = `${items.length} 个数据字段`;
     $("fieldMatchTitle").textContent = `${sourceLabel} 字段匹配`;
     $("fieldMatchNote").textContent = `依据 ${fieldMapping.source_file || "字段目录表"} 自动匹配；流量占比统一按百分比保留 2 位小数。`;
     $("fieldCoverageBadge").textContent = `直接 ${full} · 条件 ${conditional} · 动态 ${dynamic}`;
@@ -311,6 +311,14 @@
     return numbers.length ? Math.min(...numbers) : null;
   }
 
+  function latestValue(records, field) {
+    for (let index = records.length - 1; index >= 0; index -= 1) {
+      const value = records[index][field];
+      if (value !== null && value !== undefined && String(value).trim() !== "") return value;
+    }
+    return "";
+  }
+
   function formatMetric(value, digits = 0, prefix = "") {
     if (value === null || value === undefined || Number.isNaN(value)) return "-";
     return `${prefix}${Number(value).toLocaleString("zh-CN", { maximumFractionDigits: digits, minimumFractionDigits: digits })}`;
@@ -435,8 +443,16 @@
     updateDashboardOptions(allHistoryRecords);
     const records = filteredHistory();
     $("dashboardCount").textContent = `${records.length} 条`;
-    $("metricPrice").textContent = formatMetric(average(records.map(record => record.landed_price || record.price)), 2, "¥");
+    $("metricPrice").textContent = formatMetric(average(records.map(record => record.price)), 2, "¥");
+    $("metricLandedPrice").textContent = formatMetric(average(records.map(record => record.landed_price)), 2, "¥");
+    $("metricBuyBoxPrice").textContent = formatMetric(average(records.map(record => record.buy_box_price)), 2, "¥");
+    $("metricShipping").textContent = formatMetric(average(records.map(record => record.shipping_fee)), 2, "¥");
+    $("metricCoupon").textContent = latestValue(records, "coupon_value") || "-";
+    $("metricListPrice").textContent = formatMetric(average(records.map(record => record.list_price)), 2, "¥");
+    $("metricDeal").textContent = latestValue(records, "deal_label") || formatMetric(average(records.map(record => record.deal_price)), 2, "¥");
     $("metricSales").textContent = formatMetric(sum(records.map(record => record.estimated_sales)), 0);
+    $("metricParentSales").textContent = formatMetric(average(records.map(record => record.parent_estimated_sales)), 0);
+    $("metricStock").textContent = formatMetric(toNumber(latestValue(records, "stock")), 0);
     $("metricRank").textContent = formatMetric(bestRank(records.map(record => record.product_rank)), 0);
     $("metricSmallRank").textContent = formatMetric(bestRank(records.map(record => record.small_category_rank)), 0);
     $("metricRating").textContent = formatMetric(average(records.map(record => record.rating)), 1);
@@ -493,7 +509,7 @@
 
   function renderRows(records) {
     if (!records.length) {
-      historyBody.innerHTML = '<tr><td colspan="29" class="empty">暂无结果</td></tr>';
+      historyBody.innerHTML = '<tr><td colspan="30" class="empty">暂无结果</td></tr>';
       return;
     }
     historyBody.innerHTML = records.map(record => {
