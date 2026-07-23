@@ -189,6 +189,8 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(result["review_count"], 789)
         product_calls = [params for path, params, _ in client.requests if path == "/api/keepa/product"]
         self.assertEqual(product_calls[0]["domain"], 1)
+        self.assertEqual(product_calls[0]["asins"], "B000000001")
+        self.assertNotIn("asin", product_calls[0])
 
     def test_keepa_decodes_gzip_body(self):
         body = gzip.compress("Keepa 参数错误".encode("utf-8"))
@@ -198,6 +200,20 @@ class ProviderTests(unittest.TestCase):
         record = {"source": "xiyou_mcp", "message": "", "raw": {}}
         app.merge_product_enrichment(record, {"raw": {"product_error": "HTTP 400"}, "message": "HTTP 400"})
         self.assertEqual(record["source"], "xiyou_mcp")
+        self.assertIn("Keepa 未补到产品数据", record["message"])
+
+    def test_keepa_product_error_does_not_merge_default_fields(self):
+        record = {"source": "xiyou_mcp", "message": "", "raw": {}}
+        app.merge_product_enrichment(record, {
+            "raw": {"product_error": "HTTP 404"},
+            "message": "HTTP 404",
+            "deal_status": "否",
+            "product_url": "https://www.amazon.com/dp/B000000001",
+        })
+        self.assertEqual(record["source"], "xiyou_mcp")
+        self.assertNotIn("deal_status", record)
+        self.assertNotIn("product_url", record)
+        self.assertEqual(record["raw"]["keepa"]["product_error"], "HTTP 404")
         self.assertIn("Keepa 未补到产品数据", record["message"])
 
     def test_connection_normalization_and_redaction(self):

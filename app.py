@@ -924,17 +924,26 @@ PRODUCT_ENRICH_FIELDS = [
 def merge_product_enrichment(record: dict[str, Any], enrichment: dict[str, Any] | None) -> None:
     if not enrichment:
         return
-    changed = False
+    raw = enrichment.get("raw", {}) if isinstance(enrichment.get("raw"), dict) else {}
+    if raw.get("product_error") and not raw.get("product"):
+        record.setdefault("raw", {})
+        record["raw"]["keepa"] = raw
+        message = str(record.get("message") or "")
+        note = f"Keepa 未补到产品数据：{enrichment.get('message') or raw.get('product_error')}"
+        record["message"] = f"{message}；{note}" if message else note
+        return
+    meaningful_changed = False
     for field in PRODUCT_ENRICH_FIELDS:
         value = enrichment.get(field)
         if value not in ("", None):
             record[field] = value
-            changed = True
+            if field not in {"coupon_type", "deal_status", "product_url"}:
+                meaningful_changed = True
     record.setdefault("raw", {})
-    record["raw"]["keepa"] = enrichment.get("raw", {})
-    if changed:
+    record["raw"]["keepa"] = raw
+    if meaningful_changed:
         record["source"] = f"{record.get('source', '')}+keepa_api".strip("+")
-    note = "产品数据由 Keepa 补充" if changed else f"Keepa 未补到产品数据：{enrichment.get('message', '')}"
+    note = "产品数据由 Keepa 补充" if meaningful_changed else f"Keepa 未补到产品数据：{enrichment.get('message', '')}"
     message = str(record.get("message") or "")
     record["message"] = f"{message}；{note}" if message else note
 

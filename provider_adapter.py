@@ -1564,7 +1564,7 @@ class KeepaApiClient(BaseApiClient):
                 "/api/keepa/product",
                 {
                     "domain": self.domain_id(site),
-                    "asin": ",".join(missing),
+                    "asins": ",".join(missing),
                     "stats": 365,
                     "history": 1,
                     "offers": offers,
