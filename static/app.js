@@ -13,8 +13,10 @@
 
   const tableFields = [
     "date", "asin", "keyword", "traffic_share", "aba_rank", "search_volume",
-    "organic_position", "ad_position", "price", "coupon_value", "deal_price",
-    "prime_discount_price", "estimated_sales", "product_rank", "small_category_rank", "rating",
+    "organic_position", "ad_position", "price", "landed_price", "buy_box_price",
+    "shipping_fee", "coupon_value", "list_price", "deal_label", "deal_price",
+    "prime_discount_price", "estimated_sales", "parent_estimated_sales", "stock",
+    "code_promotion", "business_price", "business_discount", "product_rank", "small_category_rank", "rating",
     "review_count", "product_url", "status", "message"
   ];
 
@@ -433,7 +435,7 @@
     updateDashboardOptions(allHistoryRecords);
     const records = filteredHistory();
     $("dashboardCount").textContent = `${records.length} 条`;
-    $("metricPrice").textContent = formatMetric(average(records.map(record => record.price)), 2, "¥");
+    $("metricPrice").textContent = formatMetric(average(records.map(record => record.landed_price || record.price)), 2, "¥");
     $("metricSales").textContent = formatMetric(sum(records.map(record => record.estimated_sales)), 0);
     $("metricRank").textContent = formatMetric(bestRank(records.map(record => record.product_rank)), 0);
     $("metricSmallRank").textContent = formatMetric(bestRank(records.map(record => record.small_category_rank)), 0);
@@ -445,7 +447,7 @@
       { name: "广告位", color: "#b45309", points: makeSeries(groups, "ad_position", bestRank) }
     ];
     const metricSeries = [
-      { name: "价格", color: "#176b87", points: makeSeries(groups, "price", average) },
+      { name: "到手价", color: "#176b87", points: makeSeries(groups, "landed_price", average) },
       { name: "月销量", color: "#087f5b", points: makeSeries(groups, "estimated_sales", sum) },
       { name: "大类排名", color: "#c2410c", points: makeSeries(groups, "product_rank", bestRank) }
     ];
@@ -491,7 +493,7 @@
 
   function renderRows(records) {
     if (!records.length) {
-      historyBody.innerHTML = '<tr><td colspan="20" class="empty">暂无结果</td></tr>';
+      historyBody.innerHTML = '<tr><td colspan="29" class="empty">暂无结果</td></tr>';
       return;
     }
     historyBody.innerHTML = records.map(record => {

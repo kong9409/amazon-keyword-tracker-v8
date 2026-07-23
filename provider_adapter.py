@@ -1422,7 +1422,7 @@ class GenericApiClient(BaseApiClient):
 
 class KeepaApiClient(BaseApiClient):
     source_name = "keepa_api"
-    provider_name = "Keepa"
+    provider_name = "Keepamore"
 
     DOMAIN_IDS = {
         "US": 1, "UK": 2, "GB": 2, "DE": 3, "FR": 4, "JP": 5, "CA": 6,
@@ -1438,14 +1438,16 @@ class KeepaApiClient(BaseApiClient):
     CURRENT_RATING = 16
     CURRENT_REVIEWS = 17
 
-    def __init__(self, api_key: str, base_url: str = "https://api.keepa.com") -> None:
+    CURRENT_BUY_BOX = 18
+
+    def __init__(self, api_key: str, base_url: str = "https://mcp.keepamore.com") -> None:
         if not api_key.strip():
-            raise ValueError("请填写 Keepa API Key")
-        super().__init__(base_url or "https://api.keepa.com", api_key)
+            raise ValueError("请填写 Keepamore API Key")
+        super().__init__(base_url or "https://mcp.keepamore.com", api_key)
         self._product_cache: dict[tuple[str, str], dict[str, Any]] = {}
 
     def headers(self) -> dict[str, str]:
-        return {"Accept": "application/json"}
+        return {"Accept": "application/json", "X-API-Key": self.api_key}
 
     @staticmethod
     def _decode_body(body: bytes, encoding: str = "") -> str:
@@ -1473,6 +1475,8 @@ class KeepaApiClient(BaseApiClient):
                 self._tool_calls[tool_name] += 1
                 self._tool_seconds[tool_name] += elapsed
         data = deep_parse_json(text) if text.strip() else {}
+        if isinstance(data, dict) and data.get("code") not in (None, "0000", 0, "0"):
+            raise RuntimeError(str(data.get("msg") or data.get("error") or f"Keepamore code {data.get('code')}"))
         if isinstance(data, dict) and data.get("error"):
             error = data.get("error") or {}
             if isinstance(error, dict):
@@ -1487,7 +1491,7 @@ class KeepaApiClient(BaseApiClient):
     @staticmethod
     def _keepa_price(value: Any) -> Any:
         number = normalize_number(value)
-        if number in EMPTY or number == -1:
+        if number in EMPTY or number in {-1, -2}:
             return ""
         if isinstance(number, (int, float)):
             return round(number / 100, 2)
@@ -1542,34 +1546,151 @@ class KeepaApiClient(BaseApiClient):
         return main, small
 
     def check_ready(self) -> dict[str, Any]:
-        status = self._get("/token", {"key": self.api_key}, tool_name="token")
+        status = self._get("/api/token", {}, tool_name="token")
+        packs = ((status.get("data") or {}).get("packs") or {}) if isinstance(status, dict) else {}
         return {
             "source": self.source_name,
             "tool_count": 2,
             "recognized_tools": ["token", "product"],
             "missing_tools": [],
-            "tokens_left": status.get("tokensLeft"),
-            "note": f"Keepa API Key 已验证；剩余 tokens：{status.get('tokensLeft', '未知')}。",
+            "tokens_left": first_non_empty(packs.get("totalRemainingUnits"), status.get("tokensLeft") if isinstance(status, dict) else ""),
+            "note": f"Keepamore API Key 已验证；剩余额度：{first_non_empty(packs.get('totalRemainingUnits'), '未知')}。",
         }
 
-    def _product(self, asin: str, site: str) -> dict[str, Any]:
-        key = (asin, site)
-        if key not in self._product_cache:
+    def _products(self, asins: list[str], site: str, *, offers: int = 100) -> list[dict[str, Any]]:
+        missing = [asin for asin in asins if (asin, site) not in self._product_cache]
+        if missing:
             payload = self._get(
-                "/product",
+                "/api/keepa/product",
                 {
-                    "key": self.api_key,
                     "domain": self.domain_id(site),
-                    "asin": asin,
-                    "stats": 90,
-                    "history": 0,
+                    "asin": ",".join(missing),
+                    "stats": 365,
+                    "history": 1,
+                    "offers": offers,
+                    "buybox": 1,
+                    "stock": 1,
                     "rating": 1,
+                    "detailLevel": "full",
                 },
                 tool_name="product",
             )
-            products = payload.get("products") if isinstance(payload, dict) else None
-            self._product_cache[key] = products[0] if isinstance(products, list) and products else {}
-        return self._product_cache[key]
+            data = payload.get("data") if isinstance(payload, dict) else {}
+            products = data.get("products") if isinstance(data, dict) else None
+            by_asin = {str(product.get("asin") or "").upper(): product for product in products or [] if isinstance(product, dict)}
+            for asin in missing:
+                self._product_cache[(asin, site)] = by_asin.get(asin.upper(), {})
+        return [self._product_cache.get((asin, site), {}) for asin in asins]
+
+    def _product(self, asin: str, site: str, *, offers: int = 100) -> dict[str, Any]:
+        return self._products([asin], site, offers=offers)[0]
+
+    @staticmethod
+    def _coupon(product: dict[str, Any], base_price: Any) -> tuple[Any, str]:
+        coupon = product.get("coupon")
+        one_time = ""
+        sns = ""
+        if isinstance(coupon, list):
+            one_time = coupon[0] if len(coupon) > 0 else ""
+            sns = coupon[1] if len(coupon) > 1 else ""
+        elif isinstance(coupon, (int, float)):
+            one_time = coupon
+
+        def parse(value: Any) -> tuple[float, str]:
+            number = normalize_number(value)
+            if number in EMPTY or number == 0:
+                return 0.0, ""
+            if isinstance(number, (int, float)) and number > 0:
+                amount = round(number / 100, 2)
+                return amount, f"${amount:.2f} off"
+            if isinstance(number, (int, float)) and number < 0:
+                percent = abs(number)
+                if isinstance(base_price, (int, float)):
+                    amount = round(base_price * percent / 100, 2)
+                    return amount, f"{percent:g}% off (${amount:.2f})"
+                return 0.0, f"{percent:g}% off"
+            return 0.0, str(value)
+
+        amount, one_text = parse(one_time)
+        _, sns_text = parse(sns)
+        text = "；".join(item for item in [
+            f"一次性 {one_text}" if one_text else "",
+            f"S&S {sns_text}" if sns_text else "",
+        ] if item)
+        return amount, text
+
+    @staticmethod
+    def _latest_offer(offer: dict[str, Any]) -> tuple[Any, Any, Any]:
+        csv = offer.get("offerCSV")
+        if isinstance(csv, list) and len(csv) >= 3:
+            return KeepaApiClient._keepa_price(csv[-2]), KeepaApiClient._keepa_price(csv[-1]), offer
+        return KeepaApiClient._keepa_price(offer.get("price")), KeepaApiClient._keepa_price(offer.get("shipping")), offer
+
+    @staticmethod
+    def _latest_stock(offer: dict[str, Any]) -> Any:
+        csv = offer.get("stockCSV")
+        if isinstance(csv, list) and len(csv) >= 2:
+            return csv[-1]
+        return ""
+
+    def _best_offer(self, product: dict[str, Any]) -> dict[str, Any]:
+        stats = product.get("stats") if isinstance(product.get("stats"), dict) else {}
+        buy_box_seller = stats.get("buyBoxSellerId")
+        candidates = []
+        for offer in product.get("offers") or []:
+            if not isinstance(offer, dict):
+                continue
+            price, shipping, raw = self._latest_offer(offer)
+            if price in EMPTY:
+                continue
+            total = round(float(price) + (float(shipping) if shipping not in EMPTY else 0), 2)
+            candidates.append({
+                "price": price,
+                "shipping": shipping if shipping not in EMPTY else 0,
+                "total": total,
+                "stock": self._latest_stock(offer),
+                "is_buy_box": bool(buy_box_seller and offer.get("sellerId") == buy_box_seller),
+                "raw": raw,
+            })
+        buy_box = [item for item in candidates if item["is_buy_box"]]
+        if buy_box:
+            return sorted(buy_box, key=lambda item: item["total"])[0]
+        return sorted(candidates, key=lambda item: item["total"])[0] if candidates else {}
+
+    @staticmethod
+    def _deal_label(product: dict[str, Any]) -> str:
+        labels = []
+        for deal in product.get("deals") or []:
+            if isinstance(deal, dict):
+                label = " / ".join(str(deal.get(key)) for key in ("badge", "dealType", "accessType") if deal.get(key))
+                if label:
+                    labels.append(label)
+        return "；".join(labels)
+
+    @staticmethod
+    def _promotions(product: dict[str, Any]) -> str:
+        return "；".join(json.dumps(item, ensure_ascii=False) for item in (product.get("promotions") or []))
+
+    def _parent_sales(self, product: dict[str, Any], site: str) -> tuple[Any, str]:
+        parent = str(product.get("parentAsin") or "").strip().upper()
+        asin = str(product.get("asin") or "").strip().upper()
+        if not parent or parent == asin:
+            return "", ""
+        parent_product = self._product(parent, site, offers=0)
+        children = []
+        for variation in parent_product.get("variations") or []:
+            child = str((variation or {}).get("asin") or "").strip().upper() if isinstance(variation, dict) else ""
+            if child and child not in children:
+                children.append(child)
+        total = 0
+        known = 0
+        for index in range(0, len(children), 50):
+            for child_product in self._products(children[index:index + 50], site, offers=0):
+                monthly = normalize_number(child_product.get("monthlySold"))
+                if isinstance(monthly, (int, float)) and monthly >= 0:
+                    total += monthly
+                    known += 1
+        return (total if known else "", f"{known}/{len(children)}" if children else "")
 
     def capture_keyword(self, asin: str, keyword: str, marketplace: str) -> dict[str, Any]:
         site = normalize_marketplace(marketplace)
@@ -1584,21 +1705,37 @@ class KeepaApiClient(BaseApiClient):
         stats = product.get("stats") if isinstance(product, dict) else {}
         stats = stats if isinstance(stats, dict) else {}
         main_rank, small_rank = self._rank(product, stats) if isinstance(product, dict) else ("", "")
-        price = first_non_empty(
-            self._keepa_price(self._current(stats, self.CURRENT_AMAZON)),
-            self._keepa_price(self._current(stats, self.CURRENT_NEW)),
-            self._keepa_price(self._current(stats, self.CURRENT_FBA)),
-        )
+        price = self._keepa_price(self._current(stats, self.CURRENT_NEW))
+        list_price = self._keepa_price(self._current(stats, self.CURRENT_LIST))
         deal_price = self._keepa_price(self._current(stats, self.CURRENT_DEAL))
-        return _finish_result(
+        buy_box_price = first_non_empty(
+            self._keepa_price(stats.get("buyBoxPrice")),
+            self._keepa_price(self._current(stats, self.CURRENT_BUY_BOX)),
+        )
+        shipping_fee = self._keepa_price(stats.get("buyBoxShipping"))
+        offer = self._best_offer(product) if isinstance(product, dict) else {}
+        if buy_box_price in EMPTY and offer:
+            buy_box_price = offer.get("price", "")
+            shipping_fee = offer.get("shipping", "")
+        if shipping_fee in EMPTY:
+            shipping_fee = 0 if buy_box_price not in EMPTY else ""
+        coupon_amount, coupon_text = self._coupon(product, buy_box_price) if isinstance(product, dict) else (0, "")
+        landed_price = round(float(buy_box_price) + float(shipping_fee or 0) - coupon_amount, 2) if buy_box_price not in EMPTY else ""
+        business_discount = product.get("businessDiscount") if isinstance(product, dict) else ""
+        business_price = ""
+        if isinstance(business_discount, (int, float)) and buy_box_price not in EMPTY:
+            business_price = round(float(buy_box_price) + float(shipping_fee or 0) - coupon_amount - float(buy_box_price) * business_discount / 100, 2)
+        stock = first_non_empty(stats.get("stockBuyBox"), offer.get("stock", "") if offer else "")
+        parent_sales, parent_sales_coverage = self._parent_sales(product, site) if isinstance(product, dict) else ("", "")
+        result = _finish_result(
             provider=self.provider_name,
             asin=asin,
             site=site,
             raw=raw,
             price=price,
-            coupon_value=first_non_empty(product.get("coupon"), product.get("couponOneTimePercent"), product.get("couponOneTimeAbsolute")) if isinstance(product, dict) else "",
+            coupon_value=coupon_text,
             deal_price=deal_price,
-            prime_price=self._keepa_price(self._current(stats, self.CURRENT_FBA)),
+            prime_price=landed_price,
             sales=product.get("monthlySold", "") if isinstance(product, dict) else "",
             product_rank=main_rank,
             small_category_rank=small_rank,
@@ -1606,6 +1743,20 @@ class KeepaApiClient(BaseApiClient):
             review_count=first_non_empty(product.get("reviewCount") if isinstance(product, dict) else "", self._current(stats, self.CURRENT_REVIEWS)),
             product_url=amazon_product_url(asin, site),
         )
+        result.update({
+            "landed_price": normalize_money(landed_price),
+            "buy_box_price": normalize_money(buy_box_price),
+            "shipping_fee": normalize_money(shipping_fee),
+            "list_price": normalize_money(list_price),
+            "deal_label": self._deal_label(product) if isinstance(product, dict) else "",
+            "parent_estimated_sales": normalize_number(parent_sales),
+            "parent_sales_coverage": parent_sales_coverage,
+            "stock": normalize_number(stock),
+            "code_promotion": self._promotions(product) if isinstance(product, dict) else "",
+            "business_price": normalize_money(business_price),
+            "business_discount": f"{business_discount}% off" if isinstance(business_discount, (int, float)) else "",
+        })
+        return result
 
 
 def build_data_client(connection: dict[str, Any] | None = None) -> DataClient:
@@ -1630,7 +1781,7 @@ def build_data_client(connection: dict[str, Any] | None = None) -> DataClient:
             raise ValueError("请填写 SIF MCP Key")
         return GenericMcpClient(url, token, provider_name="SIF", source_name="sif_mcp")
     if provider == "keepa":
-        return KeepaApiClient(str(connection.get("api_key") or ""), str(connection.get("api_url") or "https://api.keepa.com"))
+        return KeepaApiClient(str(connection.get("api_key") or ""), str(connection.get("api_url") or "https://mcp.keepamore.com"))
     if provider == "custom":
         if mode == "api":
             return GenericApiClient(str(connection.get("api_url") or ""), str(connection.get("api_key") or ""), str(connection.get("api_key_header") or "Authorization"))

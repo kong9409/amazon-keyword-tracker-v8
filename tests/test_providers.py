@@ -118,16 +118,23 @@ class FakeKeepa(KeepaApiClient):
 
     def _get(self, path, params, *, tool_name):
         self.requests.append((path, params, tool_name))
-        if path == "/token":
-            return {"tokensLeft": 99}
-        if path == "/product":
-            return {"products": [{
+        if path == "/api/token":
+            return {"code": "0000", "data": {"packs": {"totalRemainingUnits": 99}}}
+        if path == "/api/keepa/product":
+            return {"code": "0000", "data": {"products": [{
                 "asin": "B000000001",
                 "rating": 167,
                 "monthlySold": 1234,
-                "stats": {"current": [2999, 3199, -1, 456, 3999, -1, -1, -1, 2599, -1, 2799, -1, -1, -1, -1, -1, 46, 789]},
+                "coupon": [2200, 0],
+                "deals": [{"badge": "Limited time deal", "dealType": "LIMITED_TIME_DEAL", "accessType": "ALL"}],
+                "stats": {
+                    "current": [2999, 3199, -1, 456, 3999, -1, -1, -1, 2599, -1, 2799, -1, -1, -1, -1, -1, 46, 789, 3199],
+                    "buyBoxPrice": 3199,
+                    "buyBoxShipping": 399,
+                    "stockBuyBox": 12,
+                },
                 "salesRanks": {"123": [600, 456], "456": [80, 45]},
-            }]}
+            }]}}
         raise AssertionError(path)
 
 
@@ -165,15 +172,22 @@ class ProviderTests(unittest.TestCase):
         ready = client.check_ready()
         result = client.capture_keyword("B000000001", "关键词1", "US")
         self.assertEqual(ready["tokens_left"], 99)
-        self.assertEqual(result["price"], 29.99)
+        self.assertEqual(result["price"], 31.99)
+        self.assertEqual(result["landed_price"], 13.98)
+        self.assertEqual(result["buy_box_price"], 31.99)
+        self.assertEqual(result["shipping_fee"], 3.99)
+        self.assertEqual(result["coupon_value"], "一次性 $22.00 off")
+        self.assertEqual(result["list_price"], 39.99)
+        self.assertEqual(result["deal_label"], "Limited time deal / LIMITED_TIME_DEAL / ALL")
         self.assertEqual(result["deal_price"], 25.99)
-        self.assertEqual(result["prime_discount_price"], 27.99)
+        self.assertEqual(result["prime_discount_price"], 13.98)
         self.assertEqual(result["estimated_sales"], 1234)
+        self.assertEqual(result["stock"], 12)
         self.assertEqual(result["product_rank"], 456)
         self.assertEqual(result["small_category_rank"], 45)
         self.assertEqual(result["rating"], 4.6)
         self.assertEqual(result["review_count"], 789)
-        product_calls = [params for path, params, _ in client.requests if path == "/product"]
+        product_calls = [params for path, params, _ in client.requests if path == "/api/keepa/product"]
         self.assertEqual(product_calls[0]["domain"], 1)
 
     def test_keepa_decodes_gzip_body(self):
@@ -195,7 +209,7 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(connection["mcp_url"], "https://mcp.sellersprite.com/mcp")
         keepa = app.normalize_connection({"provider": "keepa", "api_key": "secret"})
         self.assertTrue(app.connection_has_value(keepa))
-        self.assertEqual(keepa["api_url"], "https://api.keepa.com")
+        self.assertEqual(keepa["api_url"], "https://mcp.keepamore.com")
         clean = app.sanitize_payload_for_disk({"connection": connection, "lark": {"feishu_app_secret": "secret"}})
         self.assertEqual(clean["connection"]["provider"], "sellersprite")
         self.assertEqual(clean["connection"]["mcp_token"], "")

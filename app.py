@@ -65,10 +65,20 @@ FIELD_COLUMNS: list[tuple[str, str]] = [
     ("organic_position", "自然位"),
     ("ad_position", "广告位"),
     ("price", "价格"),
+    ("landed_price", "到手价+运费"),
+    ("buy_box_price", "Buy Box价"),
+    ("shipping_fee", "运费"),
     ("coupon_value", "优惠券"),
+    ("list_price", "划线价"),
+    ("deal_label", "Deal"),
     ("deal_price", "秒杀价"),
     ("prime_discount_price", "Prime价"),
     ("estimated_sales", "月销量"),
+    ("parent_estimated_sales", "Keepa父体月销估算"),
+    ("stock", "库存"),
+    ("code_promotion", "Code促销"),
+    ("business_price", "企业价"),
+    ("business_discount", "企业促销"),
     ("product_rank", "大类排名"),
     ("small_category_rank", "小类排名"),
     ("rating", "评分"),
@@ -224,7 +234,7 @@ def normalize_connection(value: dict[str, Any] | None) -> dict[str, Any]:
         mode = default_mode
     defaults = {
         "xiyou": "https://openapi.xydc.com",
-        "keepa": "https://api.keepa.com",
+        "keepa": "https://mcp.keepamore.com",
     }
     mcp_defaults = {
         "sellersprite": SELLERSPRITE_MCP_URL,
@@ -665,7 +675,7 @@ def product_connection_from_form(form: SimpleForm) -> dict[str, Any]:
     return normalize_connection({
         "provider": "keepa",
         "mode": "api",
-        "api_url": form.getfirst("keepa_api_url", "https://api.keepa.com"),
+        "api_url": form.getfirst("keepa_api_url", "https://mcp.keepamore.com"),
         "api_key": form.getfirst("keepa_api_key"),
     })
 
@@ -904,8 +914,11 @@ def save_daily_job(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 PRODUCT_ENRICH_FIELDS = [
-    "price", "coupon_type", "coupon_value", "deal_status", "deal_price",
-    "prime_discount_price", "estimated_sales", "product_rank",
+    "price", "landed_price", "buy_box_price", "shipping_fee",
+    "coupon_type", "coupon_value", "list_price", "deal_label",
+    "deal_status", "deal_price", "prime_discount_price",
+    "estimated_sales", "parent_estimated_sales", "stock",
+    "code_promotion", "business_price", "business_discount", "product_rank",
     "small_category_rank", "rating", "review_count", "product_url",
 ]
 
@@ -950,9 +963,12 @@ def run_capture_records(payload: dict[str, Any], progress: Any | None = None):
                 except Exception as exc:
                     result = {key: "" for key in [
                         "keyword_rank", "organic_position", "organic_time", "ad_position", "ad_time",
-                        "traffic_share", "aba_rank", "search_volume", "price", "coupon_type",
-                        "coupon_value", "deal_status", "deal_price", "prime_discount_price",
-                        "estimated_sales", "product_rank", "small_category_rank", "rating", "review_count", "product_url",
+                        "traffic_share", "aba_rank", "search_volume", "price", "landed_price",
+                        "buy_box_price", "shipping_fee", "coupon_type", "coupon_value",
+                        "list_price", "deal_label", "deal_status", "deal_price",
+                        "prime_discount_price", "estimated_sales", "parent_estimated_sales",
+                        "stock", "code_promotion", "business_price", "business_discount",
+                        "product_rank", "small_category_rank", "rating", "review_count", "product_url",
                     ]}
                     result.update({"status": "failed", "message": str(exc), "raw": {}})
                 record = {

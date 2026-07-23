@@ -105,7 +105,7 @@
                     <option value="xiyou">西柚洞察（MCP / API）</option>
                     <option value="custom">其他软件（MCP / API）</option>
                   </select>
-                  <small>自然位、广告位、ABA、搜索量等关键词指标由这里选择；产品指标由 Keepa 补充。</small>
+                  <small>自然位、广告位、ABA、搜索量等关键词指标由这里选择；产品指标由 Keepamore 补充。</small>
                 </label>
 
                 <label class="control setting-card">
@@ -229,10 +229,12 @@
             <table>
               <thead><tr>
                 <th>日期</th><th>ASIN</th><th>关键词</th><th>流量占比</th><th>ABA热度</th><th>搜索量</th>
-                <th>自然位</th><th>广告位</th><th>价格</th><th>优惠券</th><th>秒杀价</th><th>Prime价</th>
-                <th>月销量</th><th>大类排名</th><th>小类排名</th><th>评分</th><th>评价数</th><th>链接</th><th>状态</th><th>备注</th>
+                <th>自然位</th><th>广告位</th><th>价格</th><th>到手价+运费</th><th>Buy Box价</th><th>运费</th>
+                <th>优惠券</th><th>划线价</th><th>Deal</th><th>秒杀价</th><th>Prime价</th>
+                <th>月销量</th><th>Keepa父体月销估算</th><th>库存</th><th>Code促销</th><th>企业价</th><th>企业促销</th>
+                <th>大类排名</th><th>小类排名</th><th>评分</th><th>评价数</th><th>链接</th><th>状态</th><th>备注</th>
               </tr></thead>
-              <tbody id="historyBody"><tr><td colspan="20" class="empty">暂无结果</td></tr></tbody>
+              <tbody id="historyBody"><tr><td colspan="29" class="empty">暂无结果</td></tr></tbody>
             </table>
           </div>
         </section>
@@ -389,12 +391,12 @@
             <div class="section-head output-title">
               <div>
                 <p class="eyebrow">PRODUCT DATA</p>
-                <h2>Keepa 产品数据</h2>
+                <h2>Keepamore 产品数据</h2>
               </div>
             </div>
             <label class="check-card setting-card auto-download-card">
               <input type="checkbox" name="keepa_enabled" id="keepaEnabled" checked />
-              <span><strong>使用 Keepa 补充产品指标</strong><small>价格、促销、月销量、BSR、评分、评价数来自 Keepa；关键词排名仍由上方数据源抓取。</small></span>
+              <span><strong>使用 Keepamore 补充产品指标</strong><small>到手价、Buy Box、运费、优惠券、Deal、月销量、父体月销估算、库存、BSR、评分、评价数来自 Keepamore；关键词排名仍由上方数据源抓取。</small></span>
             </label>
             <div class="form-grid feishu-grid keepa-grid" id="keepaFields">
               <label class="control setting-card">
@@ -403,8 +405,8 @@
                 <small>Key 只随当前任务提交；任务日志和历史记录不会明文保存。</small>
               </label>
               <label class="control setting-card">
-                <span>Keepa API Base URL</span>
-                <input name="keepa_api_url" id="keepaApiUrl" autocomplete="off" value="https://api.keepa.com" />
+                <span>Keepamore API Base URL</span>
+                <input name="keepa_api_url" id="keepaApiUrl" autocomplete="off" value="https://mcp.keepamore.com" />
                 <small>通常保持默认值。</small>
               </label>
             </div>
