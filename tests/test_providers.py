@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 import gzip
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -409,6 +410,42 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(result["traffic_share"], "42.00%")
         self.assertEqual(result["aba_rank"], "")
         self.assertEqual(result["search_volume"], "")
+
+    def test_sellersprite_caches_group_level_metrics(self):
+        class CachedSellerSprite(SellerSpriteMcpClient):
+            def __init__(self):
+                super().__init__(token="secret")
+                self._generic_tools = [{"name": "traffic_extend"}]
+                self.group_calls = Counter()
+
+            def _ensure_initialized(self):
+                return None
+
+            def _call_direct_code(self, code, asin, keyword, site):
+                group = next(
+                    name for name, codes in self.DIRECT_TOOL_GROUPS.items()
+                    if code in codes
+                )
+                self.group_calls[group] += 1
+                if group == "traffic":
+                    return {"data": {"items": [{"keyword": keyword, "trafficPercentage": 0.42}]}}
+                if group in {"aba", "keyword"}:
+                    return {"data": {"items": [{"keyword": keyword, "searchFrequencyRank": 10, "searchVolume": 100}]}}
+                if group == "product":
+                    return {"data": {"asin": asin, "price": 1}}
+                if group == "sales":
+                    return {"data": {"asin": asin, "monthlySold": 2}}
+                return {}
+
+        client = CachedSellerSprite()
+        client.capture_keyword("B000000001", "shower door", "US")
+        client.capture_keyword("B000000002", "shower door", "US")
+        client.capture_keyword("B000000001", "glass shower door", "US")
+        self.assertEqual(client.group_calls["traffic"], 3)
+        self.assertEqual(client.group_calls["aba"], 2)
+        self.assertEqual(client.group_calls["keyword"], 2)
+        self.assertEqual(client.group_calls["product"], 2)
+        self.assertEqual(client.group_calls["sales"], 2)
 
     def test_xiyou_mcp_prefers_official_tool_names(self):
         client = XiyouMcpClient("https://mcp.xydc.com/mcp", "token")

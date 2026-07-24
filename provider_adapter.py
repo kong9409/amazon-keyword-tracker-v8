@@ -796,6 +796,7 @@ class SellerSpriteMcpClient(GenericMcpClient):
             source_name="sellersprite_mcp",
         )
         self._direct_cache: dict[tuple[str, str, str, str], Any] = {}
+        self._group_cache: dict[tuple[str, str, str, str], Any] = {}
 
     def _auth_headers(self) -> dict[str, str]:
         if not self.token:
@@ -1018,18 +1019,29 @@ class SellerSpriteMcpClient(GenericMcpClient):
         site: str,
         raw: dict[str, Any],
     ) -> Any:
+        if group in {"aba", "keyword"}:
+            cache_key = (group, "", keyword.casefold(), site)
+        elif group in {"product", "sales"}:
+            cache_key = (group, asin, "", site)
+        else:
+            cache_key = (group, asin, keyword.casefold(), site)
+        if cache_key in self._group_cache:
+            return self._group_cache[cache_key]
+
         errors: list[str] = []
         for code in self.DIRECT_TOOL_GROUPS[group]:
             try:
                 data = self._call_direct_code(code, asin, keyword, site)
                 raw[code] = data
                 if self._direct_payload_has_data(group, data, keyword):
+                    self._group_cache[cache_key] = data
                     return data
             except Exception as exc:
                 raw[f"{code}_error"] = str(exc)
                 errors.append(str(exc))
         if errors:
             raw[f"{group}_error"] = "；".join(errors[:4])
+        self._group_cache[cache_key] = {}
         return {}
 
     @staticmethod
