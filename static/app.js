@@ -13,11 +13,22 @@
   const tableFields = [
     "date", "asin", "keyword", "traffic_share", "aba_rank", "search_volume",
     "organic_position", "ad_position", "landed_price", "buy_box_price",
-    "shipping_fee", "coupon_value", "list_price", "deal_label", "deal_price",
-    "prime_discount_price", "estimated_sales", "parent_estimated_sales", "stock",
-    "code_promotion", "business_price", "product_rank", "small_category_rank", "rating",
+    "shipping_fee", "list_price", "promotion", "parent_estimated_sales", "stock",
+    "product_rank", "product_rank_time",
+    "small_category_rank", "small_category_rank_time", "rating",
     "review_count", "product_url", "status", "message"
   ];
+
+  const tableLabels = {
+    date: "日期", asin: "ASIN", keyword: "关键词", traffic_share: "流量占比",
+    aba_rank: "ABA热度", search_volume: "搜索量", organic_position: "自然位",
+    ad_position: "广告位", landed_price: "到手价+运费", buy_box_price: "Buy Box价",
+    shipping_fee: "运费", list_price: "划线价", promotion: "促销",
+    parent_estimated_sales: "Keepa父体月销估算", stock: "库存",
+    product_rank: "Keepa大类排名", product_rank_time: "大类排名更新时间",
+    small_category_rank: "Keepa小类排名", small_category_rank_time: "小类排名更新时间", rating: "评分",
+    review_count: "评价数", product_url: "链接", status: "状态", message: "备注"
+  };
 
   function getOwnerId() {
     const saved = localStorage.getItem("keywordTrackerOwnerId");
@@ -252,6 +263,38 @@
     return number !== null && number > 0 ? number : "";
   }
 
+  function compactPromotion(record) {
+    if (record.promotion) return record.promotion;
+    const parts = [];
+    if (record.coupon_value) parts.push(record.coupon_value);
+    if (record.deal_price) parts.push(`${record.deal_price} Deal`);
+    else if (record.deal_label) parts.push(`${record.deal_label} Deal`);
+    if (record.code_promotion) parts.push(record.code_promotion);
+    if (record.business_price) parts.push(`${record.business_price}企业价`);
+    else if (record.business_discount) parts.push(`${record.business_discount}企业价`);
+    return [...new Set(parts.map(value => String(value).trim()).filter(Boolean))].join("；");
+  }
+
+  function numericParentSales(record) {
+    const explicit = toNumber(record.parent_estimated_sales_value);
+    if (explicit !== null) return explicit;
+    const text = String(record.parent_estimated_sales || "");
+    const match = text.match(/^\s*([0-9,.]+)/);
+    return match ? toNumber(match[1]) : null;
+  }
+
+  function setupDashboardColumns() {
+    const header = historyBody.closest("table").querySelector("thead tr");
+    header.innerHTML = tableFields.map(field => `<th>${escapeHtml(tableLabels[field] || field)}</th>`).join("");
+    const hiddenMetricIds = ["metricDeal", "metricDealPrice", "metricPrimePrice", "metricSales", "metricCodePromotion", "metricBusinessPrice"];
+    hiddenMetricIds.forEach(id => {
+      const node = $(id);
+      if (node && node.closest("article")) node.closest("article").hidden = true;
+    });
+    const couponMetric = $("metricCoupon");
+    if (couponMetric && couponMetric.previousElementSibling) couponMetric.previousElementSibling.textContent = "促销";
+  }
+
   function average(values) {
     const numbers = values.map(toNumber).filter(value => value !== null);
     if (!numbers.length) return null;
@@ -404,18 +447,18 @@
     $("metricLandedPrice").textContent = formatMetric(average(records.map(record => record.landed_price)), 2, "¥");
     $("metricBuyBoxPrice").textContent = formatMetric(average(records.map(record => record.buy_box_price)), 2, "¥");
     $("metricShipping").textContent = formatMetric(average(records.map(record => record.shipping_fee)), 2, "¥");
-    $("metricCoupon").textContent = latestValue(records, "coupon_value") || "-";
+    $("metricCoupon").textContent = latestValue(records, "promotion") || "-";
     $("metricListPrice").textContent = formatMetric(average(records.map(record => record.list_price)), 2, "¥");
-    $("metricDeal").textContent = latestValue(records, "deal_label") || formatMetric(average(records.map(record => record.deal_price)), 2, "¥");
-    $("metricDealPrice").textContent = formatMetric(average(records.map(record => record.deal_price)), 2, "¥");
-    $("metricPrimePrice").textContent = formatMetric(average(records.map(record => record.prime_discount_price)), 2, "¥");
-    $("metricSales").textContent = formatMetric(sum(records.map(record => record.estimated_sales)), 0);
-    $("metricParentSales").textContent = formatMetric(average(records.map(record => record.parent_estimated_sales)), 0);
+    $("metricParentSales").textContent = latestValue(records, "parent_estimated_sales") || formatMetric(average(records.map(numericParentSales)), 0);
     $("metricStock").textContent = formatMetric(toNumber(latestValue(records, "stock")), 0);
-    $("metricCodePromotion").textContent = latestValue(records, "code_promotion") || "-";
-    $("metricBusinessPrice").textContent = formatMetric(average(records.map(record => record.business_price)), 2, "¥");
-    $("metricRank").textContent = formatMetric(bestRank(records.map(record => record.product_rank)), 0);
-    $("metricSmallRank").textContent = formatMetric(bestRank(records.map(record => record.small_category_rank)), 0);
+    const latestMainTime = latestValue(records, "product_rank_time");
+    const latestSmallTime = latestValue(records, "small_category_rank_time");
+    $("metricRank").textContent = latestMainTime
+      ? `${formatMetric(bestRank(records.map(record => record.product_rank)), 0)} · ${latestMainTime}`
+      : formatMetric(bestRank(records.map(record => record.product_rank)), 0);
+    $("metricSmallRank").textContent = latestSmallTime
+      ? `${formatMetric(bestRank(records.map(record => record.small_category_rank)), 0)} · ${latestSmallTime}`
+      : formatMetric(bestRank(records.map(record => record.small_category_rank)), 0);
     $("metricRating").textContent = formatMetric(average(records.map(record => record.rating)), 1);
     $("metricReviews").textContent = formatMetric(sum(records.map(record => record.review_count)), 0);
     const groups = groupedRecords(records);
@@ -425,7 +468,7 @@
     ];
     const metricSeries = [
       { name: "到手价", color: "#176b87", points: makeSeries(groups, "landed_price", average) },
-      { name: "月销量", color: "#087f5b", points: makeSeries(groups, "estimated_sales", sum) },
+      { name: "父体月销估算", color: "#087f5b", points: groups.map(([key, groupRecords]) => ({ key, value: average(groupRecords.map(numericParentSales)) })).filter(point => point.value !== null) },
       { name: "大类排名", color: "#c2410c", points: makeSeries(groups, "product_rank", bestRank) }
     ];
     $("rankChartSummary").textContent = groups.length ? `${groups.length} 个${$("bucketMode").value === "week" ? "周" : "日期"}` : "暂无数据";
@@ -438,6 +481,8 @@
   function setHistoryRecords(records) {
     allHistoryRecords = Array.isArray(records) ? records.map(record => ({
       ...record,
+      promotion: compactPromotion(record),
+      parent_estimated_sales_value: numericParentSales(record),
       organic_position: normalizeRankPosition(record.organic_position),
       ad_position: normalizeRankPosition(record.ad_position)
     })) : [];
@@ -638,6 +683,7 @@
     showConnectionFields();
     showOutputFields();
     showKeepaFields();
+    setupDashboardColumns();
     await Promise.all([loadHistory(false), loadDailyStatus()]);
     window.setInterval(loadDailyStatus, 60000);
   }

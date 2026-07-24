@@ -67,18 +67,14 @@ FIELD_COLUMNS: list[tuple[str, str]] = [
     ("landed_price", "到手价+运费"),
     ("buy_box_price", "Buy Box价"),
     ("shipping_fee", "运费"),
-    ("coupon_value", "优惠券"),
     ("list_price", "划线价"),
-    ("deal_label", "Deal"),
-    ("deal_price", "秒杀价"),
-    ("prime_discount_price", "Prime价"),
-    ("estimated_sales", "月销量"),
+    ("promotion", "促销"),
     ("parent_estimated_sales", "Keepa父体月销估算"),
     ("stock", "库存"),
-    ("code_promotion", "Code促销"),
-    ("business_price", "企业价"),
-    ("product_rank", "大类排名"),
-    ("small_category_rank", "小类排名"),
+    ("product_rank", "Keepa大类排名"),
+    ("product_rank_time", "大类排名更新时间"),
+    ("small_category_rank", "Keepa小类排名"),
+    ("small_category_rank_time", "小类排名更新时间"),
     ("rating", "评分"),
     ("review_count", "评价数"),
     ("product_url", "链接"),
@@ -93,7 +89,14 @@ FIELD_COLUMNS: list[tuple[str, str]] = [
     ("message", "备注"),
 ]
 
-DB_FIELDS = [key for key, _ in FIELD_COLUMNS]
+LEGACY_DB_FIELDS = [
+    "coupon_value", "coupon_type", "deal_label", "deal_status", "deal_price",
+    "prime_discount_price", "estimated_sales", "code_promotion",
+    "business_price", "business_discount",
+    "parent_estimated_sales_value", "parent_sales_coverage",
+    "product_rank_category", "small_category_rank_category",
+]
+DB_FIELDS = list(dict.fromkeys([key for key, _ in FIELD_COLUMNS] + LEGACY_DB_FIELDS))
 
 
 def app_timezone(name: str | None = None):
@@ -922,9 +925,12 @@ PRODUCT_ENRICH_FIELDS = [
     "landed_price", "buy_box_price", "shipping_fee",
     "coupon_type", "coupon_value", "list_price", "deal_label",
     "deal_status", "deal_price", "prime_discount_price",
-    "estimated_sales", "parent_estimated_sales", "stock",
+    "promotion", "estimated_sales", "parent_estimated_sales",
+    "parent_estimated_sales_value", "parent_sales_coverage", "stock",
     "code_promotion", "business_price", "product_rank",
-    "small_category_rank", "rating", "review_count", "product_url",
+    "product_rank_time", "product_rank_category", "small_category_rank",
+    "small_category_rank_time", "small_category_rank_category",
+    "rating", "review_count", "product_url",
 ]
 
 
@@ -980,9 +986,12 @@ def run_capture_records(payload: dict[str, Any], progress: Any | None = None):
                         "traffic_share", "aba_rank", "search_volume", "landed_price",
                         "buy_box_price", "shipping_fee", "coupon_type", "coupon_value",
                         "list_price", "deal_label", "deal_status", "deal_price",
-                        "prime_discount_price", "estimated_sales", "parent_estimated_sales",
+                        "prime_discount_price", "promotion", "estimated_sales",
+                        "parent_estimated_sales", "parent_estimated_sales_value", "parent_sales_coverage",
                         "stock", "code_promotion", "business_price",
-                        "product_rank", "small_category_rank", "rating", "review_count", "product_url",
+                        "product_rank", "product_rank_time", "product_rank_category",
+                        "small_category_rank", "small_category_rank_time", "small_category_rank_category",
+                        "rating", "review_count", "product_url",
                     ]}
                     result.update({"status": "failed", "message": str(exc), "raw": {}})
                 record = {

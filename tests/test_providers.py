@@ -121,11 +121,13 @@ class FakeKeepa(KeepaApiClient):
         if path == "/api/token":
             return {"code": "0000", "data": {"packs": {"totalRemainingUnits": 99}}}
         if path == "/api/keepa/product":
-            return {"code": "0000", "data": {"products": [{
+            products = {
+                "B000000001": {
                 "asin": "B000000001",
                 "rating": 167,
                 "monthlySold": 1234,
                 "coupon": [2200, 0],
+                "businessDiscount": 10,
                 "deals": [{"badge": "Limited time deal", "dealType": "LIMITED_TIME_DEAL", "accessType": "ALL"}],
                 "stats": {
                     "current": [2999, 3199, -1, 456, 3999, -1, -1, -1, 2599, -1, 2799, -1, -1, -1, -1, -1, 46, 789, 3199],
@@ -133,8 +135,18 @@ class FakeKeepa(KeepaApiClient):
                     "buyBoxShipping": 399,
                     "stockBuyBox": 12,
                 },
-                "salesRanks": {"123": [600, 456], "456": [80, 45]},
-            }]}}
+                "categoryTree": [
+                    {"catId": 123, "root": True, "name": "Root"},
+                    {"catId": 456, "root": False, "name": "Target leaf"},
+                ],
+                "salesRanks": {"123": [600, 456], "456": [80, 45], "789": [90, 59]},
+                "variations": [{"asin": "B000000001"}, {"asin": "B000000002"}, {"asin": "B000000003"}],
+                },
+                "B000000002": {"asin": "B000000002", "monthlySold": 100},
+                "B000000003": {"asin": "B000000003", "monthlySold": None},
+            }
+            requested = [asin.strip().upper() for asin in str(params.get("asins") or "").split(",") if asin.strip()]
+            return {"code": "0000", "data": {"products": [products[asin] for asin in requested if asin in products]}}
         raise AssertionError(path)
 
 
@@ -176,15 +188,23 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(result["landed_price"], 13.98)
         self.assertEqual(result["buy_box_price"], 31.99)
         self.assertEqual(result["shipping_fee"], 3.99)
-        self.assertEqual(result["coupon_value"], "一次性 $22.00 off")
+        self.assertEqual(result["coupon_value"], "$22优惠券")
         self.assertEqual(result["list_price"], 39.99)
         self.assertEqual(result["deal_label"], "Limited time deal / LIMITED_TIME_DEAL / ALL")
         self.assertEqual(result["deal_price"], 25.99)
         self.assertEqual(result["prime_discount_price"], 13.98)
+        self.assertEqual(result["promotion"], "$22优惠券；$25.99 Deal；$10.78企业价")
         self.assertEqual(result["estimated_sales"], 1234)
+        self.assertEqual(result["parent_estimated_sales"], "1334（3个变体，1个变体销量1234，1个变体销量100，1个变体销量无）")
+        self.assertEqual(result["parent_estimated_sales_value"], 1334)
         self.assertEqual(result["stock"], 12)
         self.assertEqual(result["product_rank"], 456)
         self.assertEqual(result["small_category_rank"], 45)
+        self.assertEqual(result["product_rank_time"], "2011-01-01 18:00")
+        self.assertEqual(result["product_rank_category"], "Root")
+        self.assertEqual(result["small_category_rank_time"], "2011-01-01 09:20")
+        self.assertEqual(result["small_category_rank_category"], "Target leaf")
+        self.assertIn("Keepa排名样本", result["message"])
         self.assertEqual(result["rating"], 4.6)
         self.assertEqual(result["review_count"], 789)
         product_calls = [params for path, params, _ in client.requests if path == "/api/keepa/product"]
@@ -290,6 +310,13 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(ready["recognized_tools"], [])
         self.assertIn("直接调用", ready["note"])
 
+    def test_sellersprite_secret_expired_is_actionable_error(self):
+        client = SellerSpriteMcpClient(token="secret")
+        client._generic_tools = [{"name": "secret_expired", "description": "密钥已过期"}]
+        client.list_tools = lambda: ["secret_expired"]
+        with self.assertRaisesRegex(RuntimeError, "已过期|无效"):
+            client.check_ready()
+
     def test_sellersprite_directly_calls_official_code_when_not_listed(self):
         class DirectSellerSprite(SellerSpriteMcpClient):
             def __init__(self):
@@ -311,6 +338,45 @@ class ProviderTests(unittest.TestCase):
         client = DirectSellerSprite()
         client._call_direct_code("traffic_keyword", "B000000001", "关键词1", "US")
         self.assertEqual(client.assert_name, "traffic_keyword")
+
+    def test_sellersprite_direct_error_code_is_not_empty_data(self):
+        class InvalidKeySellerSprite(SellerSpriteMcpClient):
+            def __init__(self):
+                super().__init__(token="secret")
+                self._generic_tools = [{"name": "secret_expired", "description": "密钥已过期"}]
+
+            def _ensure_initialized(self):
+                return None
+
+            def _post(self, payload):
+                if payload.get("method") == "tools/call":
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": payload.get("id"),
+                        "result": {"structuredContent": {"code": "ERROR_SECRET_KEY_INVALID", "message": "秘钥无效"}},
+                    }
+                return {"jsonrpc": "2.0", "id": payload.get("id"), "result": {}}
+
+        client = InvalidKeySellerSprite()
+        with self.assertRaisesRegex(RuntimeError, "秘钥无效"):
+            client._call_direct_code("traffic_keyword", "B000000001", "关键词1", "US")
+
+    def test_sellersprite_traffic_extend_request_and_empty_stat_payload(self):
+        client = SellerSpriteMcpClient(token="secret")
+        empty_stat = {
+            "code": "OK",
+            "message": "成功",
+            "data": {"marketplace": "US", "asin": "B000000001", "keywords": 0, "ranks": 0, "ads": 0},
+        }
+        extend_payload = {
+            "code": "OK",
+            "data": {"items": [{"keyword": "关键词1", "trafficPercentage": 0.12}]},
+        }
+        self.assertFalse(client._direct_payload_has_data("traffic", empty_stat, "关键词1"))
+        self.assertTrue(client._direct_payload_has_data("traffic", extend_payload, "关键词1"))
+        candidates = client._argument_candidates("traffic_extend", None, "B000000001", "关键词1", "US")
+        self.assertEqual(candidates[0]["request"]["asinList"], ["B000000001"])
+        self.assertEqual(candidates[0]["request"]["includeKeywords"], ["关键词1"])
 
     def test_xiyou_mcp_prefers_official_tool_names(self):
         client = XiyouMcpClient("https://mcp.xydc.com/mcp", "token")
