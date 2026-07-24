@@ -1032,6 +1032,15 @@ class SellerSpriteMcpClient(GenericMcpClient):
             raw[f"{group}_error"] = "；".join(errors[:4])
         return {}
 
+    @staticmethod
+    def _keyword_scoped_data(data: Any, keyword: str) -> Any:
+        matched = find_keyword_row(data, keyword)
+        if matched:
+            return matched
+        if any(row_keyword(row) for row in collect_dict_rows(data)):
+            return {}
+        return data
+
     def check_ready(self) -> dict[str, Any]:
         names = self.list_tools()
         if not names:
@@ -1087,9 +1096,9 @@ class SellerSpriteMcpClient(GenericMcpClient):
         product_data = self._call_first_direct("product", asin, keyword, site, raw)
         sales_data = self._call_first_direct("sales", asin, keyword, site, raw)
 
-        traffic_row = find_keyword_row(traffic, keyword) or traffic
-        aba_row = find_keyword_row(aba, keyword) or aba
-        keyword_row = find_keyword_row(keyword_data, keyword) or keyword_data
+        traffic_row = self._keyword_scoped_data(traffic, keyword)
+        aba_row = self._keyword_scoped_data(aba, keyword)
+        keyword_row = self._keyword_scoped_data(keyword_data, keyword)
         product = parse_product_detail(product_data)
 
         return _finish_result(

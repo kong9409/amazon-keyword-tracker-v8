@@ -378,6 +378,38 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(candidates[0]["request"]["asinList"], ["B000000001"])
         self.assertEqual(candidates[0]["request"]["includeKeywords"], ["关键词1"])
 
+    def test_sellersprite_does_not_reuse_unmatched_keyword_metrics(self):
+        class KeywordScopedSellerSprite(SellerSpriteMcpClient):
+            def __init__(self):
+                super().__init__(token="secret")
+                self._generic_tools = [{"name": "traffic_extend"}]
+
+            def _ensure_initialized(self):
+                return None
+
+            def _call_first_direct(self, group, asin, keyword, site, raw):
+                if group == "traffic":
+                    return {"data": {"items": [{"keyword": keyword, "trafficPercentage": 0.42}]}}
+                if group in {"aba", "keyword"}:
+                    return {
+                        "data": {
+                            "items": [
+                                {
+                                    "keyword": "shower door",
+                                    "searchFrequencyRank": 5887,
+                                    "searchVolume": 126933,
+                                }
+                            ]
+                        }
+                    }
+                return {}
+
+        client = KeywordScopedSellerSprite()
+        result = client.capture_keyword("B000000001", "glass shower door", "US")
+        self.assertEqual(result["traffic_share"], "42.00%")
+        self.assertEqual(result["aba_rank"], "")
+        self.assertEqual(result["search_volume"], "")
+
     def test_xiyou_mcp_prefers_official_tool_names(self):
         client = XiyouMcpClient("https://mcp.xydc.com/mcp", "token")
         client._generic_tools = [
