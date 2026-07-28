@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -420,6 +421,9 @@ class TrackerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             executable.chmod(0o755)
+            if os.name == "nt":
+                cmd = Path(tmp) / "sorftime.cmd"
+                cmd.write_text(f'@echo off\r\n"{sys.executable}" "%~dp0sorftime" %*\r\n', encoding="utf-8")
             os.environ["PATH"] = f"{tmp}{os.pathsep}{old_path}"
             try:
                 client = SorftimeCliClient("ACCOUNT-SK-SECRET")
@@ -642,6 +646,12 @@ class TrackerTests(unittest.TestCase):
         for thread in threads:
             thread.join()
         self.assertEqual(errors, [])
+
+    def test_job_owner_must_match_for_private_results(self) -> None:
+        job = {"payload": {"owner_id": "browser_1234567890abcdef"}}
+        self.assertTrue(app.job_owner_matches(job, "browser_1234567890abcdef"))
+        self.assertFalse(app.job_owner_matches(job, "browser_abcdef1234567890"))
+        self.assertFalse(app.job_owner_matches(job, ""))
 
 
 if __name__ == "__main__":

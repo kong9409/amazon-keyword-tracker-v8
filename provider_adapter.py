@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import gzip
 import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -59,6 +61,7 @@ PROVIDER_LABELS = {
     "sellersprite": "卖家精灵",
     "sif": "SIF",
     "xiyou": "西柚洞察",
+    "keepa": "Keepa",
     "custom": "其他软件",
 }
 
@@ -135,12 +138,14 @@ def _finish_result(
                 errors.append(f"{key.removesuffix('_error')}：{value}")
         if errors:
             message += "；" + "；".join(errors[:4])
+    organic_clean = normalize_position(organic_position)
+    ad_clean = normalize_position(ad_position)
     return {
         **_blank_result(),
-        "keyword_rank": first_non_empty(organic_position, ad_position),
-        "organic_position": normalize_position(organic_position),
+        "keyword_rank": first_non_empty(organic_clean, ad_clean),
+        "organic_position": organic_clean,
         "organic_time": organic_time,
-        "ad_position": normalize_position(ad_position),
+        "ad_position": ad_clean,
         "ad_time": ad_time,
         "traffic_share": normalize_percent(traffic_share),
         "aba_rank": normalize_number(aba_rank),
@@ -177,8 +182,16 @@ def _percent_value(value: Any) -> Any:
 
 def _position_value(value: Any) -> Any:
     if isinstance(value, dict):
-        return first_non_empty(value.get("position"), value.get("totalRank"), value.get("rank"), value.get("index"))
+        return first_non_empty(value.get("totalRank"), value.get("rank"), value.get("positionRank"), value.get("value"), value.get("index"), value.get("position"))
     return value
+
+
+def _first_position(*values: Any) -> Any:
+    for value in values:
+        position = normalize_position(_position_value(value))
+        if position not in EMPTY:
+            return position
+    return ""
 
 
 class BaseApiClient:
@@ -212,7 +225,7 @@ class BaseApiClient:
         request = urllib.request.Request(url, data=body, headers=self.headers(), method=method.upper())
         started = time.perf_counter()
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with urllib.request.urlopen(request, timeout=45) as response:
                 text = response.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:800]
@@ -490,8 +503,8 @@ class XiyouApiClient(BaseApiClient):
             provider=self.provider_name, asin=asin, site=site, raw=raw,
             traffic_share=_percent_value(traffic_share), aba_rank=aba_rank,
             search_volume=find_value(keyword_row, SEARCH_VOLUME_KEYS | {"weeklySearchVolume"}),
-            organic_position=first_non_empty(organic, find_value(row, ORGANIC_POSITION_KEYS)),
-            ad_position=first_non_empty(ad, find_value(row, AD_POSITION_KEYS)),
+            organic_position=_first_position(organic, find_value(row, ORGANIC_POSITION_KEYS)),
+            ad_position=_first_position(ad, find_value(row, AD_POSITION_KEYS)),
             price=first_non_empty(product.get("price", ""), find_value(detail, PRICE_KEYS)),
             coupon_value=product.get("coupon_value", ""), deal_price=product.get("deal_price", ""),
             prime_price=product.get("prime_discount_price", ""),
@@ -741,8 +754,8 @@ class GenericMcpClient(SorftimeMcpClient):
             traffic_share=find_value(traffic_row, TRAFFIC_SHARE_KEYS),
             aba_rank=find_value(keyword_row, ABA_RANK_KEYS),
             search_volume=find_value(keyword_row, SEARCH_VOLUME_KEYS),
-            organic_position=first_non_empty(find_value(traffic_row, ORGANIC_POSITION_KEYS), find_value(data["ranking"], ORGANIC_POSITION_KEYS | RANK_KEYS)),
-            ad_position=find_value(traffic_row, AD_POSITION_KEYS),
+            organic_position=_first_position(find_value(traffic_row, ORGANIC_POSITION_KEYS), find_value(data["ranking"], ORGANIC_POSITION_KEYS | RANK_KEYS)),
+            ad_position=_first_position(find_value(traffic_row, AD_POSITION_KEYS)),
             price=product.get("price", ""), coupon_value=product.get("coupon_value", ""),
             deal_price=product.get("deal_price", ""), prime_price=product.get("prime_discount_price", ""),
             sales=first_non_empty(product.get("estimated_sales", ""), find_value(data["sales"], SALES_KEYS | VALUE_KEYS)),
@@ -783,6 +796,7 @@ class SellerSpriteMcpClient(GenericMcpClient):
             source_name="sellersprite_mcp",
         )
         self._direct_cache: dict[tuple[str, str, str, str], Any] = {}
+        self._group_cache: dict[tuple[str, str, str, str], Any] = {}
 
     def _auth_headers(self) -> dict[str, str]:
         if not self.token:
@@ -883,6 +897,13 @@ class SellerSpriteMcpClient(GenericMcpClient):
             {"site": site},
             {"market": site},
         )
+        if code == "traffic_extend":
+            base = {"asinList": [asin], "marketplace": site, "queryType": 2, "page": 1, "size": 100}
+            candidates.extend([
+                {"request": {**base, "includeKeywords": [keyword], "order": {"field": "trafficPercentage", "desc": True}}},
+                {"request": {**base, "order": {"field": "trafficPercentage", "desc": True}}},
+                {"request": {**base, "queryType": 0, "includeKeywords": [keyword], "order": {"field": "trafficPercentage", "desc": True}}},
+            ])
         if code.startswith("traffic_") or code.startswith("asin_") or code in {
             "competitor_lookup", "keepa_info",
         }:
@@ -939,7 +960,13 @@ class SellerSpriteMcpClient(GenericMcpClient):
         result = response.get("result", {})
         if isinstance(result, dict) and result.get("isError"):
             raise RuntimeError(str(parse_tool_result(result)))
-        return parse_tool_result(result)
+        parsed = parse_tool_result(result)
+        if isinstance(parsed, dict):
+            code_value = str(parsed.get("code") or "").upper()
+            message_value = str(parsed.get("message") or parsed.get("msg") or "")
+            if code_value.startswith("ERROR_") or any(token in message_value for token in ("秘钥无效", "密钥无效", "密钥已过期")):
+                raise RuntimeError(message_value or code_value or f"{code} 调用失败")
+        return parsed
 
     def _call_direct_code(self, code: str, asin: str, keyword: str, site: str) -> Any:
         cache_key = (code, asin, keyword.casefold(), site)
@@ -962,6 +989,28 @@ class SellerSpriteMcpClient(GenericMcpClient):
                     break
         raise RuntimeError(f"{code}：" + "；".join(errors[:3]))
 
+    @staticmethod
+    def _direct_payload_has_data(group: str, data: Any, keyword: str) -> bool:
+        if data in EMPTY:
+            return False
+        if group != "traffic":
+            return True
+        row = find_keyword_row(data, keyword)
+        if row and isinstance(row, dict) and row is not data:
+            return True
+        body = data.get("data") if isinstance(data, dict) else data
+        rows = collect_dict_rows(body)
+        if any(re.search(r"[A-Za-z\u4e00-\u9fff]", row_keyword(item)) for item in rows):
+            return True
+        return find_value(
+            body,
+            TRAFFIC_SHARE_KEYS | ORGANIC_POSITION_KEYS | AD_POSITION_KEYS | {
+                "trafficPercentage", "trafficRate", "trafficShare",
+                "rankPosition", "organicPosition", "organicRank",
+                "adPosition", "sponsoredPosition", "adRank",
+            },
+        ) not in EMPTY
+
     def _call_first_direct(
         self,
         group: str,
@@ -970,19 +1019,39 @@ class SellerSpriteMcpClient(GenericMcpClient):
         site: str,
         raw: dict[str, Any],
     ) -> Any:
+        if group in {"aba", "keyword"}:
+            cache_key = (group, "", keyword.casefold(), site)
+        elif group in {"product", "sales"}:
+            cache_key = (group, asin, "", site)
+        else:
+            cache_key = (group, asin, keyword.casefold(), site)
+        if cache_key in self._group_cache:
+            return self._group_cache[cache_key]
+
         errors: list[str] = []
         for code in self.DIRECT_TOOL_GROUPS[group]:
             try:
                 data = self._call_direct_code(code, asin, keyword, site)
                 raw[code] = data
-                if data not in EMPTY:
+                if self._direct_payload_has_data(group, data, keyword):
+                    self._group_cache[cache_key] = data
                     return data
             except Exception as exc:
                 raw[f"{code}_error"] = str(exc)
                 errors.append(str(exc))
         if errors:
             raw[f"{group}_error"] = "；".join(errors[:4])
+        self._group_cache[cache_key] = {}
         return {}
+
+    @staticmethod
+    def _keyword_scoped_data(data: Any, keyword: str) -> Any:
+        matched = find_keyword_row(data, keyword)
+        if matched:
+            return matched
+        if any(row_keyword(row) for row in collect_dict_rows(data)):
+            return {}
+        return data
 
     def check_ready(self) -> dict[str, Any]:
         names = self.list_tools()
@@ -990,6 +1059,8 @@ class SellerSpriteMcpClient(GenericMcpClient):
             raise RuntimeError(
                 "卖家精灵 MCP 已连接，但 tools/list 没有返回工具。请检查 MCP Key、套餐和密钥状态。"
             )
+        if any(str(name).strip().lower() == "secret_expired" for name in names):
+            raise RuntimeError("卖家精灵 MCP Key 已过期或无效，请在卖家精灵后台重新生成/更新 MCP Key。")
 
         authorized_codes = sorted({
             code for code in (self._official_code(tool) for tool in self._generic_tools) if code
@@ -1037,9 +1108,9 @@ class SellerSpriteMcpClient(GenericMcpClient):
         product_data = self._call_first_direct("product", asin, keyword, site, raw)
         sales_data = self._call_first_direct("sales", asin, keyword, site, raw)
 
-        traffic_row = find_keyword_row(traffic, keyword) or traffic
-        aba_row = find_keyword_row(aba, keyword) or aba
-        keyword_row = find_keyword_row(keyword_data, keyword) or keyword_data
+        traffic_row = self._keyword_scoped_data(traffic, keyword)
+        aba_row = self._keyword_scoped_data(aba, keyword)
+        keyword_row = self._keyword_scoped_data(keyword_data, keyword)
         product = parse_product_detail(product_data)
 
         return _finish_result(
@@ -1269,8 +1340,8 @@ class XiyouMcpClient(GenericMcpClient):
         organic = ad = organic_time = ad_time = ""
         for row in candidates:
             row_date = find_value(row, {"date", "day", "time", "recordDate", "statDate"})
-            direct_org = find_value(row, ORGANIC_POSITION_KEYS)
-            direct_ad = find_value(row, AD_POSITION_KEYS)
+            direct_org = _first_position(find_value(row, ORGANIC_POSITION_KEYS))
+            direct_ad = _first_position(find_value(row, AD_POSITION_KEYS))
             if direct_org not in EMPTY and organic in EMPTY:
                 organic, organic_time = direct_org, row_date
             if direct_ad not in EMPTY and ad in EMPTY:
@@ -1285,10 +1356,10 @@ class XiyouMcpClient(GenericMcpClient):
                     item.get("position"), item.get("positionType"), item.get("rankType"),
                     item.get("type"), item.get("placement"), item.get("source"),
                 )).strip().lower()
-                value = first_non_empty(
+                value = normalize_position(first_non_empty(
                     item.get("totalRank"), item.get("rank"), item.get("positionRank"),
                     item.get("value"), item.get("index"),
-                )
+                ))
                 if value in EMPTY:
                     continue
                 if kind in {"0", "or", "organic", "natural", "自然", "自然位"} and organic in EMPTY:
@@ -1326,16 +1397,16 @@ class XiyouMcpClient(GenericMcpClient):
                 raw["ranking_ad"] = ad_ranking
                 _, rank_ad, _, rank_ad_time = self._rank_positions(ad_ranking, keyword)
                 if rank_ad in EMPTY:
-                    rank_ad = find_value(ad_ranking, AD_POSITION_KEYS | POSITION_KEYS | RANK_KEYS)
+                    rank_ad = _first_position(find_value(ad_ranking, AD_POSITION_KEYS | POSITION_KEYS | RANK_KEYS))
             except Exception as exc:
                 raw["ranking_ad_error"] = str(exc)
-        organic = first_non_empty(
+        organic = _first_position(
             positions[0],
             rank_org,
             find_value(traffic_row, ORGANIC_POSITION_KEYS),
             find_value(data["ranking"], ORGANIC_POSITION_KEYS | POSITION_KEYS | RANK_KEYS),
         )
-        ad = first_non_empty(rank_ad, positions[1], find_value(traffic_row, AD_POSITION_KEYS), find_value(data["ranking"], AD_POSITION_KEYS))
+        ad = _first_position(rank_ad, positions[1], find_value(traffic_row, AD_POSITION_KEYS), find_value(data["ranking"], AD_POSITION_KEYS))
         bsr_main, bsr_small = XiyouApiClient._latest_bsr_ranks(data["bsr"])
         product_rank = first_non_empty(
             product.get("product_rank", ""),
@@ -1417,6 +1488,488 @@ class GenericApiClient(BaseApiClient):
         )
 
 
+class KeepaApiClient(BaseApiClient):
+    source_name = "keepa_api"
+    provider_name = "Keepamore"
+
+    DOMAIN_IDS = {
+        "US": 1, "UK": 2, "GB": 2, "DE": 3, "FR": 4, "JP": 5, "CA": 6,
+        "IT": 8, "ES": 9, "IN": 10, "MX": 11, "BR": 12, "AU": 13,
+    }
+
+    CURRENT_AMAZON = 0
+    CURRENT_NEW = 1
+    CURRENT_SALES = 3
+    CURRENT_LIST = 4
+    CURRENT_DEAL = 8
+    CURRENT_FBA = 10
+    CURRENT_RATING = 16
+    CURRENT_REVIEWS = 17
+
+    CURRENT_BUY_BOX = 18
+
+    def __init__(self, api_key: str, base_url: str = "https://mcp.keepamore.com") -> None:
+        api_key = self._normalize_api_key(api_key)
+        if not api_key.strip():
+            raise ValueError("请填写 Keepamore API Key")
+        super().__init__(base_url or "https://mcp.keepamore.com", api_key)
+        self._product_cache: dict[tuple[str, str], dict[str, Any]] = {}
+
+    @staticmethod
+    def _normalize_api_key(api_key: str) -> str:
+        return str(api_key or "").strip()
+
+    def headers(self) -> dict[str, str]:
+        return {"Accept": "application/json", "X-API-Key": self.api_key}
+
+    @staticmethod
+    def _decode_body(body: bytes, encoding: str = "") -> str:
+        if encoding.lower() == "gzip" or body.startswith(b"\x1f\x8b"):
+            body = gzip.decompress(body)
+        return body.decode("utf-8", errors="replace")
+
+    def _get(self, path: str, params: dict[str, Any], *, tool_name: str) -> Any:
+        query = urllib.parse.urlencode({key: value for key, value in params.items() if value not in EMPTY})
+        url = f"{self.base_url}/{path.lstrip('/')}?{query}"
+        request = urllib.request.Request(url, headers=self.headers(), method="GET")
+        started = time.perf_counter()
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                text = self._decode_body(response.read(), response.headers.get("Content-Encoding", ""))
+        except urllib.error.HTTPError as exc:
+            detail = self._decode_body(exc.read(), exc.headers.get("Content-Encoding", ""))[:800]
+            raise RuntimeError(f"Keepa API HTTP {exc.code}：{detail or exc.reason}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"无法连接 Keepa API：{exc.reason}") from exc
+        finally:
+            elapsed = time.perf_counter() - started
+            with self._lock:
+                self._calls += 1
+                self._tool_calls[tool_name] += 1
+                self._tool_seconds[tool_name] += elapsed
+        data = deep_parse_json(text) if text.strip() else {}
+        if isinstance(data, dict) and data.get("code") not in (None, "0000", 0, "0"):
+            raise RuntimeError(str(data.get("msg") or data.get("error") or f"Keepamore code {data.get('code')}"))
+        if isinstance(data, dict) and data.get("error"):
+            error = data.get("error") or {}
+            if isinstance(error, dict):
+                raise RuntimeError(error.get("message") or error.get("type") or "Keepa API 返回错误")
+            raise RuntimeError(str(error))
+        return data
+
+    @classmethod
+    def domain_id(cls, marketplace: str) -> int:
+        return cls.DOMAIN_IDS.get(normalize_marketplace(marketplace), 1)
+
+    @staticmethod
+    def _keepa_price(value: Any) -> Any:
+        number = normalize_number(value)
+        if number in EMPTY or number in {-1, -2}:
+            return ""
+        if isinstance(number, (int, float)):
+            return round(number / 100, 2)
+        return ""
+
+    @staticmethod
+    def _current(stats: Any, index: int) -> Any:
+        if not isinstance(stats, dict):
+            return ""
+        current = stats.get("current")
+        if isinstance(current, list) and len(current) > index:
+            return current[index]
+        return ""
+
+    @staticmethod
+    def _rating(value: Any) -> Any:
+        number = normalize_number(value)
+        if number in EMPTY or number == -1:
+            return ""
+        if isinstance(number, (int, float)) and number > 5:
+            return round(number / 10, 1)
+        return number
+
+    @staticmethod
+    def _product_rating(product: dict[str, Any], stats: dict[str, Any]) -> Any:
+        current = KeepaApiClient._rating(KeepaApiClient._current(stats, KeepaApiClient.CURRENT_RATING))
+        if current not in EMPTY:
+            return current
+        rating = normalize_number(product.get("rating"))
+        if rating in EMPTY or rating == -1:
+            return ""
+        if isinstance(rating, (int, float)) and rating > 50:
+            return ""
+        return KeepaApiClient._rating(rating)
+
+    @staticmethod
+    @staticmethod
+    def _keepa_time(value: Any) -> str:
+        minutes = normalize_number(value)
+        if not isinstance(minutes, (int, float)):
+            return ""
+        captured = datetime(2011, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=float(minutes))
+        return captured.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
+
+    @staticmethod
+    def _rank(product: dict[str, Any], stats: dict[str, Any]) -> tuple[Any, str, str, Any, str, str]:
+        main = KeepaApiClient._current(stats, KeepaApiClient.CURRENT_SALES)
+        main_time = ""
+        main_category = ""
+        if main in EMPTY or main == -1:
+            main = first_non_empty(product.get("salesRank"), product.get("salesRankReference"))
+        ranks = product.get("salesRanks")
+        small = ""
+        small_time = ""
+        small_category = ""
+
+        def category_id(row: Any) -> str:
+            if not isinstance(row, dict):
+                return ""
+            value = first_non_empty(row.get("catId"), row.get("categoryId"), row.get("id"), row.get("nodeId"))
+            return str(value).strip() if value not in EMPTY else ""
+
+        def category_name(row: Any) -> str:
+            if not isinstance(row, dict):
+                return ""
+            return str(first_non_empty(row.get("name"), row.get("catName"), row.get("categoryName"), row.get("title"), "")).strip()
+
+        def latest_rank(category: Any) -> tuple[Any, str]:
+            if not isinstance(ranks, dict):
+                return "", ""
+            values = ranks.get(str(category))
+            if not isinstance(values, list):
+                return "", ""
+            for index in range(len(values) - 1, 0, -2):
+                normalized = normalize_number(values[index])
+                if normalized not in EMPTY and normalized != -1:
+                    return normalized, KeepaApiClient._keepa_time(values[index - 1])
+            return "", ""
+
+        if isinstance(ranks, dict):
+            tree = product.get("categoryTree")
+            if isinstance(tree, list):
+                ranked_tree = []
+                for index, item in enumerate(tree):
+                    cat_id = category_id(item)
+                    value, updated_at = latest_rank(cat_id)
+                    if value in EMPTY:
+                        continue
+                    is_root = bool(item.get("root") or item.get("isRoot")) if isinstance(item, dict) else False
+                    ranked_tree.append((index, is_root, value, updated_at, category_name(item)))
+                leaves = [item for item in ranked_tree if not item[1]]
+                roots = [item for item in ranked_tree if item[1]]
+                if not roots and ranked_tree:
+                    roots = [ranked_tree[0]]
+                if leaves:
+                    small, small_time, small_category = leaves[-1][2], leaves[-1][3], leaves[-1][4]
+                if (main in EMPTY or main == -1) and roots:
+                    main = roots[0][2]
+                if roots:
+                    main_time, main_category = roots[0][3], roots[0][4]
+            if small in EMPTY:
+                candidates = []
+                for category in ranks:
+                    value, updated_at = latest_rank(category)
+                    if value not in EMPTY:
+                        candidates.append((value, updated_at, str(category)))
+                if candidates:
+                    small, small_time, small_category = candidates[-1]
+        return main, main_time, main_category, small, small_time, small_category
+
+    def check_ready(self) -> dict[str, Any]:
+        status = self._get("/api/token", {}, tool_name="token")
+        packs = ((status.get("data") or {}).get("packs") or {}) if isinstance(status, dict) else {}
+        return {
+            "source": self.source_name,
+            "tool_count": 2,
+            "recognized_tools": ["token", "product"],
+            "missing_tools": [],
+            "tokens_left": first_non_empty(packs.get("totalRemainingUnits"), status.get("tokensLeft") if isinstance(status, dict) else ""),
+            "note": f"Keepamore API Key 已验证；剩余额度：{first_non_empty(packs.get('totalRemainingUnits'), '未知')}。",
+        }
+
+    def _products(self, asins: list[str], site: str, *, offers: int = 100) -> list[dict[str, Any]]:
+        missing = [asin for asin in asins if (asin, site) not in self._product_cache]
+        if missing:
+            payload = self._get(
+                "/api/keepa/product",
+                {
+                    "domain": self.domain_id(site),
+                    "asins": ",".join(missing),
+                    "stats": 365,
+                    "history": 1,
+                    "offers": offers,
+                    "buybox": 1,
+                    "stock": 1,
+                    "rating": 1,
+                    "detailLevel": "full",
+                },
+                tool_name="product",
+            )
+            data = payload.get("data") if isinstance(payload, dict) else {}
+            products = data.get("products") if isinstance(data, dict) else None
+            by_asin = {str(product.get("asin") or "").upper(): product for product in products or [] if isinstance(product, dict)}
+            for asin in missing:
+                self._product_cache[(asin, site)] = by_asin.get(asin.upper(), {})
+        return [self._product_cache.get((asin, site), {}) for asin in asins]
+
+    def _product(self, asin: str, site: str, *, offers: int = 100) -> dict[str, Any]:
+        return self._products([asin], site, offers=offers)[0]
+
+    @staticmethod
+    def _coupon(product: dict[str, Any], base_price: Any) -> tuple[Any, str]:
+        coupon = product.get("coupon")
+        one_time = ""
+        sns = ""
+        if isinstance(coupon, list):
+            one_time = coupon[0] if len(coupon) > 0 else ""
+            sns = coupon[1] if len(coupon) > 1 else ""
+        elif isinstance(coupon, (int, float)):
+            one_time = coupon
+
+        def parse(value: Any) -> tuple[float, str]:
+            number = normalize_number(value)
+            if number in EMPTY or number == 0:
+                return 0.0, ""
+            if isinstance(number, (int, float)) and number > 0:
+                amount = round(number / 100, 2)
+                return amount, f"${amount:g}优惠券"
+            if isinstance(number, (int, float)) and number < 0:
+                percent = abs(number)
+                if isinstance(base_price, (int, float)):
+                    amount = round(base_price * percent / 100, 2)
+                    return amount, f"{percent:g}%优惠券"
+                return 0.0, f"{percent:g}%优惠券"
+            return 0.0, str(value)
+
+        amount, one_text = parse(one_time)
+        _, sns_text = parse(sns)
+        text = "；".join(item for item in [
+            one_text if one_text else "",
+            f"S&S {sns_text}" if sns_text else "",
+        ] if item)
+        return amount, text
+
+    @staticmethod
+    def _latest_offer(offer: dict[str, Any]) -> tuple[Any, Any, Any]:
+        csv = offer.get("offerCSV")
+        if isinstance(csv, list) and len(csv) >= 3:
+            return KeepaApiClient._keepa_price(csv[-2]), KeepaApiClient._keepa_price(csv[-1]), offer
+        return KeepaApiClient._keepa_price(offer.get("price")), KeepaApiClient._keepa_price(offer.get("shipping")), offer
+
+    @staticmethod
+    def _latest_stock(offer: dict[str, Any]) -> Any:
+        csv = offer.get("stockCSV")
+        if isinstance(csv, list) and len(csv) >= 2:
+            return csv[-1]
+        return ""
+
+    def _best_offer(self, product: dict[str, Any]) -> dict[str, Any]:
+        stats = product.get("stats") if isinstance(product.get("stats"), dict) else {}
+        buy_box_seller = stats.get("buyBoxSellerId")
+        candidates = []
+        for offer in product.get("offers") or []:
+            if not isinstance(offer, dict):
+                continue
+            price, shipping, raw = self._latest_offer(offer)
+            if price in EMPTY:
+                continue
+            total = round(float(price) + (float(shipping) if shipping not in EMPTY else 0), 2)
+            candidates.append({
+                "price": price,
+                "shipping": shipping if shipping not in EMPTY else 0,
+                "total": total,
+                "stock": self._latest_stock(offer),
+                "is_buy_box": bool(buy_box_seller and offer.get("sellerId") == buy_box_seller),
+                "raw": raw,
+            })
+        buy_box = [item for item in candidates if item["is_buy_box"]]
+        if buy_box:
+            return sorted(buy_box, key=lambda item: item["total"])[0]
+        return sorted(candidates, key=lambda item: item["total"])[0] if candidates else {}
+
+    @staticmethod
+    def _deal_label(product: dict[str, Any]) -> str:
+        labels = []
+        for deal in product.get("deals") or []:
+            if isinstance(deal, dict):
+                label = " / ".join(str(deal.get(key)) for key in ("badge", "dealType", "accessType") if deal.get(key))
+                if label:
+                    labels.append(label)
+        return "；".join(labels)
+
+    @staticmethod
+    def _promotions(product: dict[str, Any]) -> str:
+        return "；".join(json.dumps(item, ensure_ascii=False) for item in (product.get("promotions") or []))
+
+    @staticmethod
+    def _promotion_text(item: Any) -> str:
+        if isinstance(item, str):
+            return item.strip()
+        if not isinstance(item, dict):
+            return ""
+        code = first_non_empty(item.get("code"), item.get("claimCode"), item.get("promotionCode"), item.get("promoCode"))
+        percent = first_non_empty(item.get("percent"), item.get("discountPercent"), item.get("percentage"), item.get("discountRate"))
+        amount = first_non_empty(item.get("amount"), item.get("discountAmount"), item.get("moneyOff"), item.get("value"))
+        label = first_non_empty(item.get("title"), item.get("message"), item.get("description"), item.get("type"), item.get("promotionType"))
+        percent_number = normalize_number(percent)
+        amount_number = normalize_number(amount)
+        suffix = "Code" if code not in EMPTY else "促销"
+        if isinstance(percent_number, (int, float)) and percent_number:
+            return f"{percent_number:g}%{suffix}"
+        if isinstance(amount_number, (int, float)) and amount_number:
+            return f"${amount_number:g}{suffix}"
+        if code not in EMPTY:
+            return f"{code} Code"
+        return str(label).strip() if label not in EMPTY else json.dumps(item, ensure_ascii=False)
+
+    def _promotion_summary(
+        self,
+        product: dict[str, Any],
+        *,
+        coupon_text: str = "",
+        deal_price: Any = "",
+        deal_label: str = "",
+        business_price: Any = "",
+        business_discount: Any = "",
+    ) -> str:
+        parts: list[str] = []
+        if coupon_text:
+            parts.append(coupon_text)
+        if deal_price not in EMPTY:
+            parts.append(f"${deal_price:g} Deal" if isinstance(deal_price, (int, float)) else f"{deal_price} Deal")
+        elif deal_label:
+            parts.append(f"{deal_label} Deal")
+        for promo in product.get("promotions") or []:
+            text = self._promotion_text(promo)
+            if text:
+                parts.append(text)
+        if business_price not in EMPTY:
+            parts.append(f"${business_price:g}企业价" if isinstance(business_price, (int, float)) else f"{business_price}企业价")
+        elif isinstance(business_discount, (int, float)) and business_discount:
+            parts.append(f"{business_discount:g}%企业价")
+        return "；".join(dict.fromkeys(parts))
+
+    def _parent_sales(self, product: dict[str, Any], site: str) -> tuple[Any, str]:
+        parent = str(product.get("parentAsin") or "").strip().upper()
+        parent_product = product if product.get("variations") else self._product(parent, site, offers=0) if parent else {}
+        children = []
+        for variation in parent_product.get("variations") or []:
+            child = str((variation or {}).get("asin") or "").strip().upper() if isinstance(variation, dict) else str(variation or "").strip().upper()
+            if child and child not in children:
+                children.append(child)
+        total = 0
+        buckets: Counter[Any] = Counter()
+        missing = 0
+        for index in range(0, len(children), 50):
+            for child_product in self._products(children[index:index + 50], site, offers=0):
+                monthly = normalize_number(child_product.get("monthlySold"))
+                if isinstance(monthly, (int, float)) and monthly >= 0:
+                    total += monthly
+                    buckets[int(monthly) if float(monthly).is_integer() else monthly] += 1
+                else:
+                    missing += 1
+        if not children:
+            return "", ""
+        known = sum(buckets.values())
+        parts = [f"{len(children)}个变体"]
+        for value, count in sorted(buckets.items(), key=lambda item: float(item[0]), reverse=True):
+            parts.append(f"{count}个变体销量{value:g}")
+        if missing:
+            parts.append(f"{missing}个变体销量无")
+        return total, "，".join(parts)
+
+    def capture_keyword(self, asin: str, keyword: str, marketplace: str) -> dict[str, Any]:
+        site = normalize_marketplace(marketplace)
+        asin = asin.strip().upper()
+        raw: dict[str, Any] = {}
+        try:
+            product = self._product(asin, site)
+            raw["product"] = product
+        except Exception as exc:
+            product = {}
+            raw["product_error"] = str(exc)
+        stats = product.get("stats") if isinstance(product, dict) else {}
+        stats = stats if isinstance(stats, dict) else {}
+        rank_info = self._rank(product, stats) if isinstance(product, dict) else ("", "", "", "", "", "")
+        main_rank, main_rank_time, main_rank_category, small_rank, small_rank_time, small_rank_category = rank_info
+        price = self._keepa_price(self._current(stats, self.CURRENT_NEW))
+        list_price = self._keepa_price(self._current(stats, self.CURRENT_LIST))
+        deal_price = self._keepa_price(self._current(stats, self.CURRENT_DEAL))
+        buy_box_price = first_non_empty(
+            self._keepa_price(stats.get("buyBoxPrice")),
+            self._keepa_price(self._current(stats, self.CURRENT_BUY_BOX)),
+        )
+        shipping_fee = self._keepa_price(stats.get("buyBoxShipping"))
+        offer = self._best_offer(product) if isinstance(product, dict) else {}
+        if buy_box_price in EMPTY and offer:
+            buy_box_price = offer.get("price", "")
+            shipping_fee = offer.get("shipping", "")
+        if shipping_fee in EMPTY:
+            shipping_fee = 0 if buy_box_price not in EMPTY else ""
+        coupon_amount, coupon_text = self._coupon(product, buy_box_price) if isinstance(product, dict) else (0, "")
+        landed_price = round(float(buy_box_price) + float(shipping_fee or 0) - coupon_amount, 2) if buy_box_price not in EMPTY else ""
+        business_discount = product.get("businessDiscount") if isinstance(product, dict) else ""
+        business_price = ""
+        if isinstance(business_discount, (int, float)) and buy_box_price not in EMPTY:
+            business_price = round(float(buy_box_price) + float(shipping_fee or 0) - coupon_amount - float(buy_box_price) * business_discount / 100, 2)
+        stock = first_non_empty(stats.get("stockBuyBox"), offer.get("stock", "") if offer else "")
+        parent_sales, parent_sales_coverage = self._parent_sales(product, site) if isinstance(product, dict) else ("", "")
+        deal_label = self._deal_label(product) if isinstance(product, dict) else ""
+        promotion = self._promotion_summary(
+            product,
+            coupon_text=coupon_text,
+            deal_price=deal_price,
+            deal_label=deal_label,
+            business_price=business_price,
+            business_discount=business_discount,
+        ) if isinstance(product, dict) else ""
+        result = _finish_result(
+            provider=self.provider_name,
+            asin=asin,
+            site=site,
+            raw=raw,
+            price=price,
+            coupon_value=coupon_text,
+            deal_price=deal_price,
+            prime_price=landed_price,
+            sales=product.get("monthlySold", "") if isinstance(product, dict) else "",
+            product_rank=main_rank,
+            small_category_rank=small_rank,
+            rating=self._product_rating(product, stats) if isinstance(product, dict) else "",
+            review_count=first_non_empty(product.get("reviewCount") if isinstance(product, dict) else "", self._current(stats, self.CURRENT_REVIEWS)),
+            product_url=amazon_product_url(asin, site),
+        )
+        result.update({
+            "landed_price": normalize_money(landed_price),
+            "buy_box_price": normalize_money(buy_box_price),
+            "shipping_fee": normalize_money(shipping_fee),
+            "list_price": normalize_money(list_price),
+            "deal_label": deal_label,
+            "promotion": promotion,
+            "parent_estimated_sales": f"{normalize_number(parent_sales)}（{parent_sales_coverage}）" if parent_sales not in EMPTY and parent_sales_coverage else normalize_number(parent_sales),
+            "parent_estimated_sales_value": normalize_number(parent_sales),
+            "parent_sales_coverage": parent_sales_coverage,
+            "stock": normalize_number(stock),
+            "code_promotion": self._promotions(product) if isinstance(product, dict) else "",
+            "business_price": normalize_money(business_price),
+            "business_discount": f"{business_discount}% off" if isinstance(business_discount, (int, float)) else "",
+            "product_rank_time": main_rank_time,
+            "product_rank_category": main_rank_category,
+            "small_category_rank_time": small_rank_time,
+            "small_category_rank_category": small_rank_category,
+        })
+        rank_notes = []
+        if main_rank_time:
+            rank_notes.append(f"大类{(' ' + main_rank_category) if main_rank_category else ''} {main_rank_time}")
+        if small_rank_time:
+            rank_notes.append(f"小类{(' ' + small_rank_category) if small_rank_category else ''} {small_rank_time}")
+        if rank_notes:
+            message = str(result.get("message") or "")
+            note = "Keepa排名样本：" + "；".join(rank_notes)
+            result["message"] = f"{message}；{note}" if message else note
+        return result
+
+
 def build_data_client(connection: dict[str, Any] | None = None) -> DataClient:
     connection = connection or {}
     provider = str(connection.get("provider") or "sorftime").lower()
@@ -1438,6 +1991,8 @@ def build_data_client(connection: dict[str, Any] | None = None) -> DataClient:
         if not token.strip():
             raise ValueError("请填写 SIF MCP Key")
         return GenericMcpClient(url, token, provider_name="SIF", source_name="sif_mcp")
+    if provider == "keepa":
+        return KeepaApiClient(str(connection.get("api_key") or ""), str(connection.get("api_url") or "https://mcp.keepamore.com"))
     if provider == "custom":
         if mode == "api":
             return GenericApiClient(str(connection.get("api_url") or ""), str(connection.get("api_key") or ""), str(connection.get("api_key_header") or "Authorization"))

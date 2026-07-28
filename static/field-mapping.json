@@ -1,5 +1,5 @@
 {
-  "version": "7.4",
+  "version": "8.1-keepamore-replaced",
   "source_file": "各插件mcp目录表.xlsx",
   "source_labels": {
     "sorftime_cli": "Sorftime CLI",
@@ -241,40 +241,34 @@
       }
     },
     {
-      "key": "price",
-      "label": "价格",
+      "key": "landed_price",
+      "label": "到手价+运费",
       "format": "金额",
       "sources": {
-        "sorftime_mcp": {
-          "tool": "product_detail → product_trend(Price)",
+        "default": {
+          "tool": "Keepamore /api/keepa/product：Buy Box价 + 运费 - 一次性优惠券",
           "status": "full"
-        },
-        "sorftime_cli": {
-          "tool": "ProductRequest",
+        }
+      }
+    },
+    {
+      "key": "buy_box_price",
+      "label": "Buy Box价",
+      "format": "金额",
+      "sources": {
+        "default": {
+          "tool": "Keepamore stats.buyBoxPrice / stats.current[18]",
           "status": "full"
-        },
-        "sif_mcp": {
-          "tool": "动态匹配 ASIN详情工具",
-          "status": "dynamic"
-        },
-        "xiyou_mcp": {
-          "tool": "get_asin_info → get_asin_info_trends",
-          "status": "full"
-        },
-        "xiyou_api": {
-          "tool": "asins/info · price",
-          "status": "full"
-        },
-        "custom_mcp": {
-          "tool": "动态匹配 price",
-          "status": "dynamic"
-        },
-        "custom_api": {
-          "tool": "price / listingPrice",
-          "status": "dynamic"
-        },
-        "sellersprite_mcp": {
-          "tool": "asin_detail / keepa_info",
+        }
+      }
+    },
+    {
+      "key": "shipping_fee",
+      "label": "运费",
+      "format": "金额",
+      "sources": {
+        "default": {
+          "tool": "Keepamore stats.buyBoxShipping / offerCSV shipping",
           "status": "full"
         }
       }
@@ -286,6 +280,28 @@
       "sources": {
         "default": {
           "tool": "产品详情接口实际返回时写入",
+          "status": "conditional"
+        }
+      }
+    },
+    {
+      "key": "list_price",
+      "label": "划线价",
+      "format": "金额",
+      "sources": {
+        "default": {
+          "tool": "Keepamore stats.current[4] / LISTPRICE",
+          "status": "full"
+        }
+      }
+    },
+    {
+      "key": "deal_label",
+      "label": "Deal",
+      "format": "文本",
+      "sources": {
+        "default": {
+          "tool": "Keepamore deals：badge / dealType / accessType",
           "status": "conditional"
         }
       }
@@ -348,6 +364,50 @@
         "sellersprite_mcp": {
           "tool": "competitor_lookup / asin_sales_trend",
           "status": "full"
+        }
+      }
+    },
+    {
+      "key": "parent_estimated_sales",
+      "label": "Keepa父体月销估算",
+      "format": "整数",
+      "sources": {
+        "default": {
+          "tool": "Keepamore parentAsin variations 月销量加总估算",
+          "status": "conditional"
+        }
+      }
+    },
+    {
+      "key": "stock",
+      "label": "库存",
+      "format": "整数",
+      "sources": {
+        "default": {
+          "tool": "Keepamore stats.stockBuyBox / offer stockCSV",
+          "status": "conditional"
+        }
+      }
+    },
+    {
+      "key": "code_promotion",
+      "label": "Code促销",
+      "format": "文本/JSON",
+      "sources": {
+        "default": {
+          "tool": "Keepamore promotions",
+          "status": "conditional"
+        }
+      }
+    },
+    {
+      "key": "business_price",
+      "label": "企业价",
+      "format": "金额",
+      "sources": {
+        "default": {
+          "tool": "Keepamore businessDiscount 估算企业到手价",
+          "status": "conditional"
         }
       }
     },

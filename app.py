@@ -64,13 +64,17 @@ FIELD_COLUMNS: list[tuple[str, str]] = [
     ("search_volume", "搜索量"),
     ("organic_position", "自然位"),
     ("ad_position", "广告位"),
-    ("price", "价格"),
-    ("coupon_value", "优惠券"),
-    ("deal_price", "秒杀价"),
-    ("prime_discount_price", "Prime价"),
-    ("estimated_sales", "月销量"),
-    ("product_rank", "大类排名"),
-    ("small_category_rank", "小类排名"),
+    ("landed_price", "到手价+运费"),
+    ("buy_box_price", "Buy Box价"),
+    ("shipping_fee", "运费"),
+    ("list_price", "划线价"),
+    ("promotion", "促销"),
+    ("parent_estimated_sales", "Keepa父体月销估算"),
+    ("stock", "库存"),
+    ("product_rank", "Keepa大类排名"),
+    ("product_rank_time", "大类排名更新时间"),
+    ("small_category_rank", "Keepa小类排名"),
+    ("small_category_rank_time", "小类排名更新时间"),
     ("rating", "评分"),
     ("review_count", "评价数"),
     ("product_url", "链接"),
@@ -85,7 +89,14 @@ FIELD_COLUMNS: list[tuple[str, str]] = [
     ("message", "备注"),
 ]
 
-DB_FIELDS = [key for key, _ in FIELD_COLUMNS]
+LEGACY_DB_FIELDS = [
+    "coupon_value", "coupon_type", "deal_label", "deal_status", "deal_price",
+    "prime_discount_price", "estimated_sales", "code_promotion",
+    "business_price", "business_discount",
+    "parent_estimated_sales_value", "parent_sales_coverage",
+    "product_rank_category", "small_category_rank_category",
+]
+DB_FIELDS = list(dict.fromkeys([key for key, _ in FIELD_COLUMNS] + LEGACY_DB_FIELDS))
 
 
 def app_timezone(name: str | None = None):
@@ -208,7 +219,7 @@ def connection_path(owner_id: str) -> Path:
 def normalize_connection(value: dict[str, Any] | None) -> dict[str, Any]:
     value = value or {}
     provider = str(value.get("provider", "sorftime") or "sorftime").strip().lower()
-    if provider not in {"sorftime", "sellersprite", "sif", "xiyou", "custom"}:
+    if provider not in {"sorftime", "sellersprite", "sif", "xiyou", "keepa", "custom"}:
         provider = "sorftime"
     default_mode = "cli_account" if provider == "sorftime" else ("mcp_url" if provider in {"sellersprite", "sif", "xiyou", "custom"} else "api")
     mode = str(value.get("mode", default_mode) or default_mode).strip().lower()
@@ -217,12 +228,14 @@ def normalize_connection(value: dict[str, Any] | None) -> dict[str, Any]:
         "sellersprite": {"mcp_url"},
         "sif": {"mcp_url"},
         "xiyou": {"mcp_url", "api"},
+        "keepa": {"api"},
         "custom": {"mcp_url", "api"},
     }
     if mode not in allowed_modes[provider]:
         mode = default_mode
     defaults = {
         "xiyou": "https://openapi.xydc.com",
+        "keepa": "https://mcp.keepamore.com",
     }
     mcp_defaults = {
         "sellersprite": SELLERSPRITE_MCP_URL,
@@ -263,6 +276,8 @@ def connection_has_value(connection: dict[str, Any]) -> bool:
         return bool(connection.get("mcp_url") and connection.get("mcp_token")) if mode == "mcp_url" else bool(connection.get("api_key"))
     if provider == "sif":
         return bool(connection.get("mcp_url") and connection.get("mcp_token"))
+    if provider == "keepa":
+        return bool(connection.get("api_key"))
     if provider == "custom":
         return bool(connection.get("api_url")) if mode == "api" else bool(connection.get("mcp_url"))
     return False
@@ -655,6 +670,17 @@ def connection_from_form(form: SimpleForm) -> dict[str, Any]:
     })
 
 
+def product_connection_from_form(form: SimpleForm) -> dict[str, Any]:
+    if form.getfirst("keepa_enabled", "false") not in {"on", "true", "1", "yes"}:
+        return {}
+    return normalize_connection({
+        "provider": "keepa",
+        "mode": "api",
+        "api_url": form.getfirst("keepa_api_url", "https://mcp.keepamore.com"),
+        "api_key": form.getfirst("keepa_api_key"),
+    })
+
+
 def parse_capture_form(form: SimpleForm) -> dict[str, Any]:
     asins = parse_text_items(form.getfirst("asins_text") or form.getfirst("asinText"), True)
     keywords = parse_text_items(form.getfirst("keywords_text") or form.getfirst("keywordText"))
@@ -676,6 +702,7 @@ def parse_capture_form(form: SimpleForm) -> dict[str, Any]:
         "download_dir": form.getfirst("download_dir").strip(),
         "remember_connection": form.getfirst("remember_connection", "on") in {"on", "true", "1", "yes"},
         "connection": connection_from_form(form),
+        "product_connection": product_connection_from_form(form),
         "lark": {
             "feishu_app_id": form.getfirst("feishu_app_id").strip(),
             "feishu_app_secret": form.getfirst("feishu_app_secret").strip(),
@@ -723,6 +750,10 @@ def resolve_payload_connection(payload: dict[str, Any], *, for_daily: bool = Fal
             validate_hosted_data_url(entered.get("api_url", ""), f"{label} API")
         elif entered.get("mode") == "mcp_stdio":
             raise ValueError("Zeabur 不接受任意命令；请使用 Sorftime CLI、公开 MCP 或 API")
+        product_connection = normalize_connection(payload.get("product_connection"))
+        if product_connection.get("provider") == "keepa" and connection_has_value(product_connection):
+            validate_hosted_data_url(product_connection.get("api_url", ""), "Keepa API")
+            payload["product_connection"] = product_connection
         payload["connection"] = entered
         payload["remember_connection"] = False
         payload["download_dir"] = ""
@@ -756,6 +787,14 @@ def sanitize_payload_for_disk(payload: dict[str, Any]) -> dict[str, Any]:
         "cli_command": "", "cli_cwd": "", "api_url": "",
         "api_key": "", "api_key_header": connection.get("api_key_header", "Authorization"),
         "saved_locally": not HOSTED_MODE,
+    }
+    product_connection = normalize_connection(clean.get("product_connection"))
+    clean["product_connection"] = {
+        "provider": product_connection.get("provider", "keepa") if product_connection.get("provider") == "keepa" else "",
+        "mode": product_connection.get("mode", "api") if product_connection.get("provider") == "keepa" else "",
+        "api_url": product_connection.get("api_url", "") if product_connection.get("provider") == "keepa" else "",
+        "api_key": "",
+        "saved_locally": False,
     }
     return clean
 
@@ -795,6 +834,13 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
     result.pop("payload", None)
     result.pop("records", None)
     return result
+
+
+def job_owner_matches(job: dict[str, Any], owner_id: str) -> bool:
+    safe_owner = sanitize_owner_id(owner_id)
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    job_owner = sanitize_owner_id(str(payload.get("owner_id") or ""))
+    return bool(safe_owner and job_owner and safe_owner == job_owner)
 
 
 def public_daily_config(config: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -857,6 +903,7 @@ def save_daily_job(payload: dict[str, Any]) -> dict[str, Any]:
             "delivery": schedule_payload.get("delivery", "excel"),
             "data_provider": (schedule_payload.get("connection") or {}).get("provider", "sorftime"),
             "connection_mode": (schedule_payload.get("connection") or {}).get("mode", ""),
+            "product_provider": (schedule_payload.get("product_connection") or {}).get("provider", ""),
         },
         "encrypted_payload": encrypt_daily_payload(schedule_payload) if enabled else "",
         "last_attempt_date": last_attempt_date,
@@ -874,9 +921,52 @@ def save_daily_job(payload: dict[str, Any]) -> dict[str, Any]:
     return public_daily_config(config) or {}
 
 
+PRODUCT_ENRICH_FIELDS = [
+    "landed_price", "buy_box_price", "shipping_fee",
+    "coupon_type", "coupon_value", "list_price", "deal_label",
+    "deal_status", "deal_price", "prime_discount_price",
+    "promotion", "estimated_sales", "parent_estimated_sales",
+    "parent_estimated_sales_value", "parent_sales_coverage", "stock",
+    "code_promotion", "business_price", "product_rank",
+    "product_rank_time", "product_rank_category", "small_category_rank",
+    "small_category_rank_time", "small_category_rank_category",
+    "rating", "review_count", "product_url",
+]
+
+
+def merge_product_enrichment(record: dict[str, Any], enrichment: dict[str, Any] | None) -> None:
+    if not enrichment:
+        return
+    raw = enrichment.get("raw", {}) if isinstance(enrichment.get("raw"), dict) else {}
+    if raw.get("product_error") and not raw.get("product"):
+        record.setdefault("raw", {})
+        record["raw"]["keepa"] = raw
+        message = str(record.get("message") or "")
+        note = f"Keepa 未补到产品数据：{enrichment.get('message') or raw.get('product_error')}"
+        record["message"] = f"{message}；{note}" if message else note
+        return
+    meaningful_changed = False
+    for field in PRODUCT_ENRICH_FIELDS:
+        value = enrichment.get(field)
+        if value not in ("", None):
+            record[field] = value
+            if field not in {"coupon_type", "deal_status", "product_url"}:
+                meaningful_changed = True
+    record.setdefault("raw", {})
+    record["raw"]["keepa"] = raw
+    if meaningful_changed:
+        record["source"] = f"{record.get('source', '')}+keepa_api".strip("+")
+    note = "产品数据由 Keepa 补充" if meaningful_changed else f"Keepa 未补到产品数据：{enrichment.get('message', '')}"
+    message = str(record.get("message") or "")
+    record["message"] = f"{message}；{note}" if message else note
+
+
 def run_capture_records(payload: dict[str, Any], progress: Any | None = None):
     validate_payload(payload)
     client = build_data_client(payload.get("connection"))
+    product_connection = normalize_connection(payload.get("product_connection"))
+    product_client = build_data_client(product_connection) if product_connection.get("provider") == "keepa" and connection_has_value(product_connection) else None
+    product_cache: dict[tuple[str, str], dict[str, Any] | None] = {}
     records: list[dict[str, Any]] = []
     capture_time = now_local(payload.get("timezone"))
     total = len(payload["asins"]) * len(payload["keywords"])
@@ -893,9 +983,15 @@ def run_capture_records(payload: dict[str, Any], progress: Any | None = None):
                 except Exception as exc:
                     result = {key: "" for key in [
                         "keyword_rank", "organic_position", "organic_time", "ad_position", "ad_time",
-                        "traffic_share", "aba_rank", "search_volume", "price", "coupon_type",
-                        "coupon_value", "deal_status", "deal_price", "prime_discount_price",
-                        "estimated_sales", "product_rank", "small_category_rank", "rating", "review_count", "product_url",
+                        "traffic_share", "aba_rank", "search_volume", "landed_price",
+                        "buy_box_price", "shipping_fee", "coupon_type", "coupon_value",
+                        "list_price", "deal_label", "deal_status", "deal_price",
+                        "prime_discount_price", "promotion", "estimated_sales",
+                        "parent_estimated_sales", "parent_estimated_sales_value", "parent_sales_coverage",
+                        "stock", "code_promotion", "business_price",
+                        "product_rank", "product_rank_time", "product_rank_category",
+                        "small_category_rank", "small_category_rank_time", "small_category_rank_category",
+                        "rating", "review_count", "product_url",
                     ]}
                     result.update({"status": "failed", "message": str(exc), "raw": {}})
                 record = {
@@ -908,16 +1004,37 @@ def run_capture_records(payload: dict[str, Any], progress: Any | None = None):
                     **result,
                     "source": client.source_name,
                 }
+                if product_client:
+                    cache_key = (asin.strip().upper(), payload["marketplace"])
+                    if cache_key not in product_cache:
+                        try:
+                            product_cache[cache_key] = product_client.capture_keyword(asin, keyword, payload["marketplace"])
+                        except Exception as exc:
+                            product_cache[cache_key] = {"raw": {"product_error": str(exc)}, "message": str(exc)}
+                    merge_product_enrichment(record, product_cache[cache_key])
                 records.append(record)
                 if progress:
                     progress("after", done, total, asin, keyword, client.stats())
         records = sort_records(records)
         save_records(records)
         stats = client.stats()
+        if product_client:
+            product_stats = product_client.stats()
+            stats["mcp_calls"] = int(stats.get("mcp_calls", 0)) + int(product_stats.get("mcp_calls", 0))
+            merged_tools = dict(stats.get("tool_calls", {}))
+            for name, count in (product_stats.get("tool_calls", {}) or {}).items():
+                merged_tools[f"keepa:{name}"] = count
+            stats["tool_calls"] = merged_tools
+            merged_seconds = dict(stats.get("tool_seconds", {}))
+            for name, seconds in (product_stats.get("tool_seconds", {}) or {}).items():
+                merged_seconds[f"keepa:{name}"] = seconds
+            stats["tool_seconds"] = merged_seconds
         stats["connection_check"] = readiness
         return records, stats
     finally:
         client.close()
+        if product_client:
+            product_client.close()
 
 
 def write_excel_exports(content: bytes, filename: str, payload: dict[str, Any]) -> tuple[str, str]:
@@ -1151,8 +1268,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/api/jobs/"):
             parts = parsed.path.strip("/").split("/")
             job_id = parts[2] if len(parts) >= 3 else ""
+            owner_id = parse_qs(parsed.query).get("owner_id", [""])[0]
             job = read_json(job_path(job_id))
-            if not job:
+            if not job or not job_owner_matches(job, owner_id):
                 return self.send_json({"ok": False, "error": "任务不存在或服务已重启"}, 404)
             if len(parts) == 4 and parts[3] == "results":
                 return self.send_json({"ok": True, "records": job.get("records", [])})
@@ -1205,10 +1323,18 @@ class Handler(BaseHTTPRequestHandler):
                     if saved and saved.get("provider") == connection.get("provider") and saved.get("mode") == connection.get("mode"):
                         connection = saved
                 result = test_data_connection(connection)
+                product_result = None
+                product_connection = product_connection_from_form(form)
+                if product_connection.get("provider") == "keepa":
+                    if not connection_has_value(product_connection):
+                        raise ValueError("请填写 Keepa API Key")
+                    if HOSTED_MODE:
+                        validate_hosted_data_url(product_connection.get("api_url", ""), "Keepa API")
+                    product_result = test_data_connection(product_connection)
                 remember = (not HOSTED_MODE) and form.getfirst("remember_connection", "on") in {"on", "true", "1", "yes"}
                 if remember:
                     save_local_connection(owner_id, connection)
-                return self.send_json({"ok": True, "connection": result, "saved": remember, "hosted": HOSTED_MODE})
+                return self.send_json({"ok": True, "connection": result, "product_connection": product_result, "saved": remember, "hosted": HOSTED_MODE})
             if self.path == "/api/connection/clear":
                 form = form_from_request(self)
                 owner_id = sanitize_owner_id(form.getfirst("owner_id"))
